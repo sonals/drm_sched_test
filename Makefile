@@ -14,7 +14,9 @@ sched_test-y := \
 
 
 CONFIG_MODULE_SIG=n
-KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
+KERNEL_VERSION ?= $(shell uname -r)
+KERNEL_SRC := /lib/modules/$(KERNEL_VERSION)/build
+#KERMEL_SRC = 5.11.0-27-generic
 
 PWD	:= $(shell pwd)
 ROOT	:= $(dir $(M))

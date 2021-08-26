@@ -18,6 +18,12 @@
 
 #include "sched_test_common.h"
 
+#define DRIVER_NAME	"sched_test"
+#define DRIVER_DESC	"DRM scheduler test driver"
+#define DRIVER_DATE	"20210815"
+#define DRIVER_MAJOR	1
+#define DRIVER_MINOR	0
+
 static struct sched_test_device *sched_test_device_obj;
 
 static int sched_test_open(struct drm_device *dev, struct drm_file *file)
@@ -86,6 +92,8 @@ static int __init sched_test_init(void)
 	ret = drm_dev_register(&sched_test_device_obj->drm, 0);
 	if (ret)
 		goto out_sched;
+
+	spin_lock_init(&sched_test_device_obj->job_lock);
 
 	return 0;
 

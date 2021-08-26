@@ -6,22 +6,32 @@
  */
 
 #include <linux/platform_device.h>
+#include <linux/spinlock_types.h>
 
 #include <drm/drm_device.h>
 #include <drm/drm_drv.h>
 #include <drm/gpu_scheduler.h>
 
-#define DRIVER_NAME	"sched_test"
-#define DRIVER_DESC	"DRM scheduler test driver"
-#define DRIVER_DATE	"20210815"
-#define DRIVER_MAJOR	1
-#define DRIVER_MINOR	0
 
+#define SCHED_TEST_MAX_QUEUE 2
+
+enum sched_test_queue {
+	SCHED_TEST_QUEUE_REGULAR,
+	SCHED_TEST_QUEUE_FAST,
+	SCHED_TEST_QUEUE_MAX
+};
+
+struct sched_test_queue_state {
+	struct drm_gpu_scheduler sched;
+	u64 fence_context;
+	u64 emit_seqno;
+};
 
 struct sched_test_device {
 	struct drm_device drm;
 	struct platform_device *platform;
-        struct drm_gpu_scheduler sched;
+        struct sched_test_queue_state queue[SCHED_TEST_QUEUE_MAX];
+	spinlock_t job_lock;
 };
 
 struct sched_test_file_priv {
@@ -29,5 +39,31 @@ struct sched_test_file_priv {
 	struct drm_sched_entity sched_entity;
 };
 
+struct sched_test_fence {
+	struct dma_fence base;
+	struct drm_device *dev;
+	u64 seqno;
+	enum sched_test_queue qu;
+};
+
+struct sched_test_job {
+	struct drm_sched_job base;
+	struct sched_test_device *sdev;
+	struct dma_fence *fence;
+};
+
+static inline struct sched_test_fence *to_sched_test_fence(struct dma_fence *fence)
+{
+	return (struct sched_test_fence *)fence;
+}
+
+static inline struct sched_test_job *to_sched_test_job(struct drm_sched_job *job)
+{
+	return container_of(job, struct sched_test_job, base);
+}
+
 int sched_test_sched_init(struct sched_test_device *sdev);
 void sched_test_sched_fini(struct sched_test_device *sdev);
+
+int sched_test_job_init(struct sched_test_job *job);
+void sched_test_job_fini(struct sched_test_job *job);
