@@ -36,7 +36,7 @@ static int sched_test_open(struct drm_device *dev, struct drm_file *file)
 		return -ENOMEM;
 
 	priv->dev = to_sched_test_dev(dev);
-	sched = &priv->dev->queue[SCHED_TEST_QUEUE_REGULAR].sched;
+	sched = &priv->dev->queue[SCHED_TEST_QUEUE_A].sched;
 	ret = drm_sched_entity_init(&priv->entity, DRM_SCHED_PRIORITY_NORMAL, &sched,
 				    1, NULL);
 	if (ret)
@@ -231,6 +231,7 @@ static void __exit sched_test_exit(void)
 {
 	struct platform_device *pdev = sched_test_device_obj->platform;
 
+	sched_test_sched_fini(sched_test_device_obj);
 	drm_dev_unregister(&sched_test_device_obj->drm);
 	devres_release_group(&pdev->dev, NULL);
 	platform_device_unregister(pdev);

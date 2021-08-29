@@ -43,10 +43,10 @@ static const char *sched_test_fence_get_timeline_name(struct dma_fence *fence)
 	const struct sched_test_fence *f = to_sched_test_fence(fence);
 
 	switch (f->qu) {
-	case SCHED_TEST_QUEUE_REGULAR:
-		return str(SCHED_TEST_QUEUE_REGULAR);
-	case SCHED_TEST_QUEUE_FAST:
-		return str(SCHED_TEST_QUEUE_FAST);
+	case SCHED_TEST_QUEUE_A:
+		return str(SCHED_TEST_QUEUE_A);
+	case SCHED_TEST_QUEUE_B:
+		return str(SCHED_TEST_QUEUE_B);
 	default:
 		return NULL;
 	}
@@ -125,7 +125,7 @@ int sched_test_sched_init(struct sched_test_device *sdev)
 	int hang_limit_ms = 500;
 	int ret;
 
-	ret = drm_sched_init(&sdev->queue[SCHED_TEST_QUEUE_REGULAR].sched,
+	ret = drm_sched_init(&sdev->queue[SCHED_TEST_QUEUE_A].sched,
 			     &sched_test_regular_ops,
 			     hw_jobs_limit, job_hang_limit,
 			     msecs_to_jiffies(hang_limit_ms),
@@ -135,7 +135,7 @@ int sched_test_sched_init(struct sched_test_device *sdev)
 		return ret;
 	}
 
-	ret = drm_sched_init(&sdev->queue[SCHED_TEST_QUEUE_FAST].sched,
+	ret = drm_sched_init(&sdev->queue[SCHED_TEST_QUEUE_B].sched,
 			     &sched_test_fast_ops,
 			     hw_jobs_limit, job_hang_limit,
 			     msecs_to_jiffies(hang_limit_ms),
