@@ -129,7 +129,7 @@ int sched_test_sched_init(struct sched_test_device *sdev)
 			     &sched_test_regular_ops,
 			     hw_jobs_limit, job_hang_limit,
 			     msecs_to_jiffies(hang_limit_ms),
-			     str(SCHED_TEST_QUEUE_REGULAR));
+			     NULL, str(SCHED_TEST_QUEUE_REGULAR));
 	if (ret) {
 		drm_err(&sdev->drm, "Failed to create %s scheduler: %d", str(SCHED_TEST_QUEUE_REGULAR), ret);
 		return ret;
@@ -139,7 +139,7 @@ int sched_test_sched_init(struct sched_test_device *sdev)
 			     &sched_test_fast_ops,
 			     hw_jobs_limit, job_hang_limit,
 			     msecs_to_jiffies(hang_limit_ms),
-			     str(SCHED_TEST_QUEUE_REGULAR));
+			     NULL, str(SCHED_TEST_QUEUE_REGULAR));
 	if (ret) {
 		drm_err(&sdev->drm, "Failed to create %s scheduler: %d", str(SCHED_TEST_QUEUE_REGULAR),
 			ret);

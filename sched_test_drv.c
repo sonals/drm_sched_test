@@ -17,6 +17,7 @@
 #include <drm/gpu_scheduler.h>
 
 #include "sched_test_common.h"
+#include "uapi/sched_test.h"
 
 #define DRIVER_NAME	"sched_test"
 #define DRIVER_DESC	"DRM scheduler test driver"
@@ -28,24 +29,144 @@ static struct sched_test_device *sched_test_device_obj;
 
 static int sched_test_open(struct drm_device *dev, struct drm_file *file)
 {
-	int ret;
+	struct drm_gpu_scheduler *sched;
+	int ret = 0;
 	struct sched_test_file_priv *priv = kzalloc(sizeof(struct sched_test_file_priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 
+	priv->dev = to_sched_test_dev(dev);
+	sched = &priv->dev->queue[SCHED_TEST_QUEUE_REGULAR].sched;
+	ret = drm_sched_entity_init(&priv->entity, DRM_SCHED_PRIORITY_NORMAL, &sched,
+				    1, NULL);
+	if (ret)
+		goto out;
 	file->driver_priv = priv;
 	return 0;
+
+out:
+	kfree(priv);
+	return ret;
 }
 
 static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 {
 	struct sched_test_file_priv *priv = file->driver_priv;
 
+	drm_sched_entity_destroy(&priv->entity);
 	kfree(priv);
+	file->driver_priv = NULL;
+}
+
+int sched_test_submit_ioctl(struct drm_device *dev, void *data,
+			    struct drm_file *file_priv)
+{
+	struct sched_test_device *sdev = to_sched_test_dev(dev);
+	struct sched_test_file_priv *priv = file_priv->driver_priv;
+	struct drm_sched_test_submit *args = data;
+	struct sched_test_job *job;
+	int ret = 0;
+
+	job = kcalloc(1, sizeof(*job), GFP_KERNEL);
+	if (!job)
+		return -ENOMEM;
+
+#if 0
+	ret = sched_test_job_init(job, priv);
+	if (ret) {
+		kfree(job);
+		return ret;
+	}
+
+
+	if (args->flags & DRM_V3D_SUBMIT_CL_FLUSH_CACHE) {
+		clean_job = kcalloc(1, sizeof(*clean_job), GFP_KERNEL);
+		if (!clean_job) {
+			ret = -ENOMEM;
+			goto fail;
+		}
+
+		ret = v3d_job_init(v3d, file_priv, clean_job, v3d_job_free, 0);
+		if (ret) {
+			kfree(clean_job);
+			clean_job = NULL;
+			goto fail;
+		}
+
+		last_job = clean_job;
+	} else {
+		last_job = &render->base;
+	}
+
+	ret = v3d_lookup_bos(dev, file_priv, last_job,
+			     args->bo_handles, args->bo_handle_count);
+	if (ret)
+		goto fail;
+
+	ret = v3d_lock_bo_reservations(last_job, &acquire_ctx);
+	if (ret)
+		goto fail;
+
+	mutex_lock(&v3d->sched_lock);
+	if (bin) {
+		ret = v3d_push_job(v3d_priv, &bin->base, V3D_BIN);
+		if (ret)
+			goto fail_unreserve;
+
+		ret = drm_gem_fence_array_add(&render->base.deps,
+					      dma_fence_get(bin->base.done_fence));
+		if (ret)
+			goto fail_unreserve;
+	}
+
+	ret = v3d_push_job(v3d_priv, &render->base, V3D_RENDER);
+	if (ret)
+		goto fail_unreserve;
+
+	if (clean_job) {
+		struct dma_fence *render_fence =
+			dma_fence_get(render->base.done_fence);
+		ret = drm_gem_fence_array_add(&clean_job->deps, render_fence);
+		if (ret)
+			goto fail_unreserve;
+		ret = v3d_push_job(v3d_priv, clean_job, V3D_CACHE_CLEAN);
+		if (ret)
+			goto fail_unreserve;
+	}
+
+	mutex_unlock(&v3d->sched_lock);
+
+	v3d_attach_fences_and_unlock_reservation(file_priv,
+						 last_job,
+						 &acquire_ctx,
+						 args->out_sync,
+						 last_job->done_fence);
+
+	if (bin)
+		v3d_job_put(&bin->base);
+	v3d_job_put(&render->base);
+	if (clean_job)
+		v3d_job_put(clean_job);
+
+	return 0;
+
+fail_unreserve:
+	mutex_unlock(&v3d->sched_lock);
+	drm_gem_unlock_reservations(last_job->bo,
+				    last_job->bo_count, &acquire_ctx);
+fail:
+	if (bin)
+		v3d_job_put(&bin->base);
+	v3d_job_put(&render->base);
+	if (clean_job)
+		v3d_job_put(clean_job);
+
+#endif
+	return ret;
 }
 
 static const struct drm_ioctl_desc sched_test_ioctls[] = {
-
+	DRM_IOCTL_DEF_DRV(SCHED_TEST_SUBMIT, sched_test_submit_ioctl, DRM_RENDER_ALLOW | DRM_AUTH),
 };
 
 DEFINE_DRM_GEM_FOPS(sched_test_driver_fops);

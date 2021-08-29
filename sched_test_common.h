@@ -5,6 +5,10 @@
  *     Sonal Santan <sonal.santan@xilinx.com>
  */
 
+#ifndef _SCHED_TEST_COMMON_H_
+#define _SCHED_TEST_COMMON_H_
+
+
 #include <linux/platform_device.h>
 #include <linux/spinlock_types.h>
 
@@ -35,8 +39,8 @@ struct sched_test_device {
 };
 
 struct sched_test_file_priv {
-	struct sched_test_device *obj;
-	struct drm_sched_entity sched_entity;
+	struct sched_test_device *dev;
+	struct drm_sched_entity entity;
 };
 
 struct sched_test_fence {
@@ -62,8 +66,15 @@ static inline struct sched_test_job *to_sched_test_job(struct drm_sched_job *job
 	return container_of(job, struct sched_test_job, base);
 }
 
+static inline struct sched_test_device *to_sched_test_dev(struct drm_device *dev)
+{
+	return container_of(dev, struct sched_test_device, drm);
+}
+
 int sched_test_sched_init(struct sched_test_device *sdev);
 void sched_test_sched_fini(struct sched_test_device *sdev);
 
 int sched_test_job_init(struct sched_test_job *job);
 void sched_test_job_fini(struct sched_test_job *job);
+
+#endif
