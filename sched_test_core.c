@@ -44,8 +44,9 @@ spinlock_t events_lock;
 // structure describing the event to be processed
 struct event {
 	struct list_head lh;
-	bool stop;
 	struct dma_fence *fence;
+	bool stop;
+	int seq;
 };
 
 static struct event *pop_next_event(struct sched_test_hwemu_thread *thread_arg)
@@ -100,6 +101,7 @@ int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
 
 	drm_info(&sdev->drm, "init %s", sched_test_queue_name(arg->qu));
 
+	INIT_LIST_HEAD(&events_list);
 	sdev->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_queue_name(arg->qu));
 
 	if(IS_ERR(sdev->hwemu_thread)) {
@@ -118,6 +120,9 @@ int sched_test_hwemu_thread_stop(struct sched_test_device *sdev)
 	if (!sdev->hwemu_thread)
 		return 0;
 
+	struct event *e = kzalloc(sizeof(struct event), GFP_KERNEL);
+	e->stop = true;
+	push_next_event(e);
 	ret = kthread_stop(sdev->hwemu_thread);
 	sdev->hwemu_thread = NULL;
 

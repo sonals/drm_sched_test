@@ -85,4 +85,7 @@ void sched_test_sched_fini(struct sched_test_device *sdev);
 int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv *priv);
 void sched_test_job_fini(struct sched_test_job *job);
 
+int sched_test_hwemu_thread_start(struct sched_test_device *sdev);
+int sched_test_hwemu_thread_stop(struct sched_test_device *sdev);
+
 #endif
