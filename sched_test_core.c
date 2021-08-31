@@ -45,43 +45,50 @@ spinlock_t events_lock;
 struct event {
 	struct list_head lh;
 	struct dma_fence *fence;
+	struct sched_test_device *sdev;
 	bool stop;
 	int seq;
 };
 
 static struct event *pop_next_event(struct sched_test_hwemu_thread *thread_arg)
 {
-    struct event *e;
+    struct event *e = NULL;
 
     spin_lock(&events_lock);
-    e = list_first_entry(&events_list, struct event, lh);
-    if (e)
-        list_del(&e->lh);
+    if (!list_empty(&events_list)) {
+	    e = list_first_entry(&events_list, struct event, lh);
+	    if (e)
+		    list_del(&e->lh);
+    }
     spin_unlock(&events_lock);
-
+    drm_info(&thread_arg->dev->drm, "Popped event %p, sdev %p", e, (e ? e->sdev : NULL));
     return e;
 }
 
-static void push_next_event(struct event *ev)
+static void push_next_event(struct event *e)
 {
-    spin_lock(&events_lock);
-    list_add(&ev->lh, &events_list);
-    spin_unlock(&events_lock);
-    wake_up(&wq);
+	drm_info(&e->sdev->drm, "Pushing event %p, sdev %p", e, e->sdev);
+	spin_lock(&events_lock);
+	list_add_tail(&e->lh, &events_list);
+	spin_unlock(&events_lock);
+	wake_up(&wq);
 }
 
 
 static int sched_test_thread(void *data)
 {
+	int i = 0;
 	static struct event *e;
 	struct sched_test_hwemu_thread *thread_arg = data;
 
 	while (!kthread_should_stop()) {
+		drm_info(&thread_arg->dev->drm, "%d waiting for event", i);
 		msleep_interruptible(thread_arg->interval);
-		wait_event(wq, (e = pop_next_event(thread_arg)));
+		wait_event(wq, ((e = pop_next_event(thread_arg))));
 		if (e->stop)
 			break;
 		dma_fence_signal(e->fence);
+		i++;
 	}
 	drm_err(&thread_arg->dev->drm, "%s exit", sched_test_queue_name(thread_arg->qu));
 	return 0;
@@ -92,7 +99,7 @@ int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
 	int err = 0;
 	struct sched_test_hwemu_thread *arg = kzalloc(sizeof(struct sched_test_hwemu_thread), GFP_KERNEL);
 	if (!arg)
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 	arg->dev = sdev;
 	arg->interval = 1;
 	arg->qu = SCHED_TEST_QUEUE_A;
@@ -115,13 +122,15 @@ int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
 
 int sched_test_hwemu_thread_stop(struct sched_test_device *sdev)
 {
+	struct event *e;
 	int ret;
 
 	if (!sdev->hwemu_thread)
 		return 0;
 
-	struct event *e = kzalloc(sizeof(struct event), GFP_KERNEL);
+	e = kzalloc(sizeof(struct event), GFP_KERNEL);
 	e->stop = true;
+	e->sdev = sdev;
 	push_next_event(e);
 	ret = kthread_stop(sdev->hwemu_thread);
 	sdev->hwemu_thread = NULL;
@@ -199,6 +208,7 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	struct event *e = kzalloc(sizeof(struct event), GFP_KERNEL);
 	e->fence = job->fence;
 	e->stop = false;
+	e->sdev = job->sdev;
 
 	push_next_event(e);
 	return fence;
