@@ -105,7 +105,7 @@ static int sched_test_thread(void *data)
 			drm_info(&thread_arg->dev->drm, "breaking out of kthread loop");
 			break;
 		}
-		dma_fence_signal(e->fence);
+		dma_fence_signal_locked(e->fence);
 		i++;
 	}
 	drm_info(&thread_arg->dev->drm, "%s exit", sched_test_hw_queue_name(thread_arg->qu));
@@ -299,8 +299,8 @@ int sched_test_sched_init(struct sched_test_device *sdev)
 void sched_test_sched_fini(struct sched_test_device *sdev)
 {
 	enum sched_test_queue i;
-	for (i = SCHED_TSTQ_MAX; i > 0; i--) {
-		if (sdev->queue[i].sched.ready)
+	for (i = SCHED_TSTQ_MAX; i > 0;) {
+		if (sdev->queue[--i].sched.ready)
 			drm_sched_fini(&sdev->queue[i].sched);
 	}
 }
