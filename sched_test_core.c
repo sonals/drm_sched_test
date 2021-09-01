@@ -25,12 +25,24 @@
 static const char *sched_test_queue_name(const enum sched_test_queue qu)
 {
 	switch (qu) {
-	case SCHED_TEST_QUEUE_A:
-		return str(SCHED_TEST_QUEUE_A);
-	case SCHED_TEST_QUEUE_B:
-		return str(SCHED_TEST_QUEUE_B);
+	case SCHED_TSTQ_A:
+		return str(SCHED_TSTQ_A);
+	case SCHED_TSTQ_B:
+		return str(SCHED_TSTQ_B);
 	default:
-		return "??";
+		return "SCHED_TSTQ_??";
+	}
+}
+
+static const char *sched_test_hw_queue_name(const enum sched_test_queue qu)
+{
+	switch (qu) {
+	case SCHED_TSTQ_A:
+		return "HW_TSTQ_A";
+	case SCHED_TSTQ_B:
+		return "HW_TSTQ_B";
+	default:
+		return "HW_TSTQ_??";
 	}
 }
 
@@ -53,6 +65,7 @@ struct event {
 static struct event *pop_next_event(struct sched_test_hwemu_thread *thread_arg)
 {
     struct event *e = NULL;
+    static int count = 0;
 
     spin_lock(&events_lock);
     if (!list_empty(&events_list)) {
@@ -61,13 +74,15 @@ static struct event *pop_next_event(struct sched_test_hwemu_thread *thread_arg)
 		    list_del(&e->lh);
     }
     spin_unlock(&events_lock);
-    drm_info(&thread_arg->dev->drm, "Popped event %p, sdev %p", e, (e ? e->sdev : NULL));
+    drm_info(&thread_arg->dev->drm, "Popped event %p, sdev %p seq %d", e, (e ? e->sdev : NULL), (e ? e->seq : 0xffffffff));
     return e;
 }
 
 static void push_next_event(struct event *e)
 {
-	drm_info(&e->sdev->drm, "Pushing event %p, sdev %p", e, e->sdev);
+	static int seq = 0;
+	e->seq = seq++;
+	drm_info(&e->sdev->drm, "Pushing event %p, sdev %p, seq %d", e, e->sdev, e->seq);
 	spin_lock(&events_lock);
 	list_add_tail(&e->lh, &events_list);
 	spin_unlock(&events_lock);
@@ -78,19 +93,22 @@ static void push_next_event(struct event *e)
 static int sched_test_thread(void *data)
 {
 	int i = 0;
-	static struct event *e;
 	struct sched_test_hwemu_thread *thread_arg = data;
 
 	while (!kthread_should_stop()) {
-		drm_info(&thread_arg->dev->drm, "%d waiting for event", i);
-		msleep_interruptible(thread_arg->interval);
-		wait_event(wq, ((e = pop_next_event(thread_arg))));
-		if (e->stop)
+		struct event *e = NULL;
+		drm_info(&thread_arg->dev->drm, "Loop %d waiting for event", i);
+//		msleep_interruptible(thread_arg->interval);
+		wait_event_interruptible(wq, ((e = pop_next_event(thread_arg)) ||
+					      kthread_should_stop()));
+		if ((e == NULL) || e->stop) {
+			drm_info(&thread_arg->dev->drm, "breaking out of kthread loop");
 			break;
+		}
 		dma_fence_signal(e->fence);
 		i++;
 	}
-	drm_err(&thread_arg->dev->drm, "%s exit", sched_test_queue_name(thread_arg->qu));
+	drm_info(&thread_arg->dev->drm, "%s exit", sched_test_hw_queue_name(thread_arg->qu));
 	return 0;
 }
 
@@ -102,17 +120,17 @@ int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
 		return -ENOMEM;
 	arg->dev = sdev;
 	arg->interval = 1;
-	arg->qu = SCHED_TEST_QUEUE_A;
+	arg->qu = SCHED_TSTQ_A;
 
 	spin_lock_init(&events_lock);
 
 	drm_info(&sdev->drm, "init %s", sched_test_queue_name(arg->qu));
 
 	INIT_LIST_HEAD(&events_list);
-	sdev->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_queue_name(arg->qu));
+	sdev->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_hw_queue_name(arg->qu));
 
 	if(IS_ERR(sdev->hwemu_thread)) {
-		drm_err(&sdev->drm, "create %s", sched_test_queue_name(arg->qu));
+		drm_err(&sdev->drm, "create %s", sched_test_hw_queue_name(arg->qu));
 		err = PTR_ERR(sdev->hwemu_thread);
 		sdev->hwemu_thread = NULL;
 		return err;
@@ -135,20 +153,21 @@ int sched_test_hwemu_thread_stop(struct sched_test_device *sdev)
 	ret = kthread_stop(sdev->hwemu_thread);
 	sdev->hwemu_thread = NULL;
 
-	drm_info(&sdev->drm, "stop %s", sched_test_queue_name(SCHED_TEST_QUEUE_A));
+	drm_info(&sdev->drm, "stop %s", sched_test_hw_queue_name(SCHED_TSTQ_A));
 	return ret;
 }
 
 
 int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv *priv)
 {
-	struct dma_fence *fence;
 	int err = drm_sched_job_init(&job->base, &priv->entity, NULL);
 
 	if (err)
 		return err;
 
+	job->sdev = priv->sdev;
 	job->fence = dma_fence_get(&job->base.s_fence->finished);
+	drm_info(&job->sdev->drm, "Ready to push job %p on entity %p", job, &priv->entity);
 	drm_sched_entity_push_job(&job->base, &priv->entity);
 
 	return err;
@@ -196,6 +215,8 @@ static struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev,
 static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_job,
 						   struct drm_sched_entity *sched_entity)
 {
+	struct sched_test_job *job = to_sched_test_job(sched_job);
+	drm_info(&job->sdev->drm, "No dependency for job %p", job);
 	return NULL;
 }
 
@@ -203,15 +224,14 @@ static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_j
 static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
-	struct dma_fence *fence = NULL;
-
 	struct event *e = kzalloc(sizeof(struct event), GFP_KERNEL);
+
 	e->fence = job->fence;
 	e->stop = false;
 	e->sdev = job->sdev;
-
+	drm_info(&e->sdev->drm, "Push next event %p job %p", e, job);
 	push_next_event(e);
-	return fence;
+	return job->fence;
 }
 
 static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sched_job)
@@ -251,23 +271,23 @@ int sched_test_sched_init(struct sched_test_device *sdev)
 	int hang_limit_ms = 500;
 	int ret;
 
-	ret = drm_sched_init(&sdev->queue[SCHED_TEST_QUEUE_A].sched,
+	ret = drm_sched_init(&sdev->queue[SCHED_TSTQ_A].sched,
 			     &sched_test_regular_ops,
 			     hw_jobs_limit, job_hang_limit,
 			     msecs_to_jiffies(hang_limit_ms),
-			     NULL, str(SCHED_TEST_QUEUE_REGULAR));
+			     NULL, sched_test_queue_name(SCHED_TSTQ_A));
 	if (ret) {
-		drm_err(&sdev->drm, "Failed to create %s scheduler: %d", str(SCHED_TEST_QUEUE_REGULAR), ret);
+		drm_err(&sdev->drm, "Failed to create %s scheduler: %d", sched_test_queue_name(SCHED_TSTQ_A), ret);
 		return ret;
 	}
 
-	ret = drm_sched_init(&sdev->queue[SCHED_TEST_QUEUE_B].sched,
+	ret = drm_sched_init(&sdev->queue[SCHED_TSTQ_B].sched,
 			     &sched_test_fast_ops,
 			     hw_jobs_limit, job_hang_limit,
 			     msecs_to_jiffies(hang_limit_ms),
-			     NULL, str(SCHED_TEST_QUEUE_REGULAR));
+			     NULL, sched_test_queue_name(SCHED_TSTQ_B));
 	if (ret) {
-		drm_err(&sdev->drm, "Failed to create %s scheduler: %d", str(SCHED_TEST_QUEUE_REGULAR),
+		drm_err(&sdev->drm, "Failed to create %s scheduler: %d", sched_test_queue_name(SCHED_TSTQ_B),
 			ret);
 		sched_test_sched_fini(sdev);
 		return ret;
@@ -279,7 +299,7 @@ int sched_test_sched_init(struct sched_test_device *sdev)
 void sched_test_sched_fini(struct sched_test_device *sdev)
 {
 	enum sched_test_queue i;
-	for (i = SCHED_TEST_QUEUE_MAX; i > 0; i--) {
+	for (i = SCHED_TSTQ_MAX; i > 0; i--) {
 		if (sdev->queue[i].sched.ready)
 			drm_sched_fini(&sdev->queue[i].sched);
 	}

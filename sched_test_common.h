@@ -20,9 +20,9 @@
 #define SCHED_TEST_MAX_QUEUE 2
 
 enum sched_test_queue {
-	SCHED_TEST_QUEUE_A,
-	SCHED_TEST_QUEUE_B,
-	SCHED_TEST_QUEUE_MAX
+	SCHED_TSTQ_A,
+	SCHED_TSTQ_B,
+	SCHED_TSTQ_MAX
 };
 
 struct sched_test_queue_state {
@@ -34,14 +34,14 @@ struct sched_test_queue_state {
 struct sched_test_device {
 	struct drm_device drm;
 	struct platform_device *platform;
-        struct sched_test_queue_state queue[SCHED_TEST_QUEUE_MAX];
+        struct sched_test_queue_state queue[SCHED_TSTQ_MAX];
 	spinlock_t job_lock;
 
 	struct task_struct *hwemu_thread;
 };
 
 struct sched_test_file_priv {
-	struct sched_test_device *dev;
+	struct sched_test_device *sdev;
 	struct drm_sched_entity entity;
 };
 

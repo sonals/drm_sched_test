@@ -35,8 +35,8 @@ static int sched_test_open(struct drm_device *dev, struct drm_file *file)
 	if (!priv)
 		return -ENOMEM;
 
-	priv->dev = to_sched_test_dev(dev);
-	sched = &priv->dev->queue[SCHED_TEST_QUEUE_A].sched;
+	priv->sdev = to_sched_test_dev(dev);
+	sched = &priv->sdev->queue[SCHED_TSTQ_A].sched;
 	ret = drm_sched_entity_init(&priv->entity, DRM_SCHED_PRIORITY_NORMAL, &sched,
 				    1, NULL);
 	if (ret)
@@ -71,11 +71,13 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 	if (!job)
 		return -ENOMEM;
 
+	drm_info(&sdev->drm, "Submit ioctl");
 	ret = sched_test_job_init(job, priv);
 	if (ret) {
 		kfree(job);
 		return ret;
 	}
+	drm_info(&sdev->drm, "Submitted job %p", job);
 
 	return 0;
 }
