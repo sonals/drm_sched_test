@@ -11,6 +11,7 @@
 
 #include <linux/platform_device.h>
 #include <linux/spinlock_types.h>
+#include <linux/idr.h>
 
 #include <drm/drm_device.h>
 #include <drm/drm_drv.h>
@@ -43,6 +44,7 @@ struct sched_test_device {
 struct sched_test_file_priv {
 	struct sched_test_device *sdev;
 	struct drm_sched_entity entity;
+	struct idr job_idr;
 };
 
 struct sched_test_fence {

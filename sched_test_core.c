@@ -98,7 +98,6 @@ static int sched_test_thread(void *data)
 	while (!kthread_should_stop()) {
 		struct event *e = NULL;
 		drm_info(&thread_arg->dev->drm, "Loop %d waiting for event", i);
-//		msleep_interruptible(thread_arg->interval);
 		wait_event_interruptible(wq, ((e = pop_next_event(thread_arg)) ||
 					      kthread_should_stop()));
 		if ((e == NULL) || e->stop) {
@@ -175,8 +174,9 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 
 void sched_test_job_fini(struct sched_test_job *job)
 {
-	dma_fence_put(job->fence);
-	drm_sched_job_cleanup(&job->base);
+	dma_fence_signal_locked(job->fence); // Should call sched_test_job_free() if not already signalled
+//	dma_fence_put(job->fence);
+	drm_info(&job->sdev->drm, "Cleanup2 %p", job);
 }
 
 static const char *sched_test_fence_get_driver_name(struct dma_fence *fence)
@@ -246,7 +246,7 @@ static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sch
 static void sched_test_job_free(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
-
+	drm_info(&job->sdev->drm, "Cleanup1 %p", job);
 	drm_sched_job_cleanup(sched_job);
 }
 

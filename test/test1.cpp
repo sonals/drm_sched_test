@@ -18,6 +18,14 @@
 
 static const int LEN = 128;
 
+template <long unsigned int code, typename rec> int ioctlRun(int fd, rec *data, const char *nodeName)
+{
+	int result = ioctl(fd, code, data);
+	if (result < 0)
+		throw std::system_error(errno, std::generic_category(), nodeName);
+	return result;
+}
+
 int run(const char *nodeName)
 {
 	int fd = open(nodeName, O_RDWR);
@@ -38,22 +46,20 @@ int run(const char *nodeName)
 	version.date = date.get();
 	version.date_len = LEN;
 
-	int result = ioctl(fd, DRM_IOCTL_VERSION, &version);
-	if (result < 0)
-		throw std::system_error(errno, std::generic_category(), "version");
-
+	int result = ioctlRun<DRM_IOCTL_VERSION, drm_version>(fd, &version, nodeName);
 	std::cout << version.name << std::endl;
 
-	drm_sched_test_submit submit0 = {1024};
-	result = ioctl(fd, DRM_IOCTL_SCHED_TEST_SUBMIT, &submit0);
-	if (result < 0)
-		throw std::system_error(errno, std::generic_category(), nodeName);
+	drm_sched_test_submit submit0 = {0};
+	result = ioctlRun<DRM_IOCTL_SCHED_TEST_SUBMIT, drm_sched_test_submit>(fd, &submit0, nodeName);
+	std::cout << "submit0 fence: " << submit0.fence << std::endl;
 
-	drm_sched_test_submit submit1 = {1024};
-	result = ioctl(fd, DRM_IOCTL_SCHED_TEST_SUBMIT, &submit1);
-	if (result < 0)
-		throw std::system_error(errno, std::generic_category(), nodeName);
+	drm_sched_test_submit submit1 = {0};
+	result = ioctlRun<DRM_IOCTL_SCHED_TEST_SUBMIT, drm_sched_test_submit>(fd, &submit1, nodeName);
+	std::cout << "submit1 fence: " << submit1.fence << std::endl;
 
+	drm_sched_test_wait wait0 = {submit0.fence, 100};
+	result = ioctlRun<DRM_IOCTL_SCHED_TEST_WAIT, drm_sched_test_wait>(fd, &wait0, nodeName);
+	std::cout << "wait0 result: " << result << std::endl;
 	return 0;
 }
 

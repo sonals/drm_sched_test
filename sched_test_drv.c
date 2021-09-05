@@ -41,6 +41,7 @@ static int sched_test_open(struct drm_device *dev, struct drm_file *file)
 				    1, NULL);
 	if (ret)
 		goto out;
+	idr_init_base(&priv->job_idr, 1);
 	file->driver_priv = priv;
 	return 0;
 
@@ -49,10 +50,19 @@ out:
 	return ret;
 }
 
+static int job_idr_fini(int id, void *p, void *data)
+{
+	struct sched_test_job *job = p;
+	sched_test_job_fini(job);
+	return 0;
+}
+
 static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 {
 	struct sched_test_file_priv *priv = file->driver_priv;
 
+	idr_for_each(&priv->job_idr, job_idr_fini, priv);
+	idr_destroy(&priv->job_idr);
 	drm_sched_entity_destroy(&priv->entity);
 	kfree(priv);
 	file->driver_priv = NULL;
@@ -72,18 +82,53 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 		return -ENOMEM;
 
 	drm_info(&sdev->drm, "Submit ioctl");
-	ret = sched_test_job_init(job, priv);
-	if (ret) {
-		kfree(job);
-		return ret;
-	}
-	drm_info(&sdev->drm, "Submitted job %p", job);
+	ret = idr_alloc(&priv->job_idr, job, 1, 0, GFP_KERNEL);
+	if (ret > 0)
+		args->fence = ret;
+	else
+		goto out_free;
 
+	ret = sched_test_job_init(job, priv);
+	if (ret)
+		goto out_idr;
+
+	drm_info(&sdev->drm, "Submitted job %p", job);
 	return 0;
+
+out_idr:
+	idr_remove(&priv->job_idr, args->fence);
+out_free:
+	kfree(job);
+	return ret;
+}
+
+int sched_test_wait_ioctl(struct drm_device *dev, void *data,
+			  struct drm_file *file_priv)
+{
+	struct sched_test_device *sdev = to_sched_test_dev(dev);
+	struct sched_test_file_priv *priv = file_priv->driver_priv;
+	struct drm_sched_test_wait *args = data;
+	struct sched_test_job *job = idr_find(&priv->job_idr, args->fence);
+	signed long int left = 0;
+	int ret = 0;
+
+	if (!job)
+		return -EINVAL;
+	drm_info(&sdev->drm, "Wait ioctl");
+	left = dma_fence_wait_timeout(job->fence, true, args->timeout);
+	if (left > 0) {
+		idr_remove(&priv->job_idr, args->fence);
+		sched_test_job_fini(job);
+		return 0;
+	}
+	if (left < 0)
+		return left;
+	return -ETIMEDOUT;
 }
 
 static const struct drm_ioctl_desc sched_test_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(SCHED_TEST_SUBMIT, sched_test_submit_ioctl, DRM_RENDER_ALLOW | DRM_AUTH),
+	DRM_IOCTL_DEF_DRV(SCHED_TEST_WAIT, sched_test_wait_ioctl, DRM_RENDER_ALLOW | DRM_AUTH),
 };
 
 DEFINE_DRM_GEM_FOPS(sched_test_driver_fops);
