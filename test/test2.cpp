@@ -18,10 +18,11 @@
 #include <stdexcept>
 #include <memory>
 #include <cstring>
+#include <chrono>
 
 #include "sched_test.h"
 
-// g++ -I ../uapi/ test1.cpp -ldrm
+// g++ -I ../uapi/ test2.cpp
 
 static const int LEN = 128;
 
@@ -33,7 +34,7 @@ template <long unsigned int code, typename rec> int ioctlRun(int fd, rec *data, 
 	return result;
 }
 
-int run(const char *nodeName)
+int run(const char *nodeName, int count)
 {
 	int fd = open(nodeName, O_RDWR);
 
@@ -56,17 +57,16 @@ int run(const char *nodeName)
 	int result = ioctlRun<DRM_IOCTL_VERSION, drm_version>(fd, &version, nodeName);
 	std::cout << version.name << std::endl;
 
-	drm_sched_test_submit submit0 = {0};
-	result = ioctlRun<DRM_IOCTL_SCHED_TEST_SUBMIT, drm_sched_test_submit>(fd, &submit0, nodeName);
-	std::cout << "submit0 fence: " << submit0.fence << std::endl;
-
-	drm_sched_test_submit submit1 = {0};
-	result = ioctlRun<DRM_IOCTL_SCHED_TEST_SUBMIT, drm_sched_test_submit>(fd, &submit1, nodeName);
-	std::cout << "submit1 fence: " << submit1.fence << std::endl;
-
-	drm_sched_test_wait wait0 = {submit0.fence, 100};
-	result = ioctlRun<DRM_IOCTL_SCHED_TEST_WAIT, drm_sched_test_wait>(fd, &wait0, nodeName);
-	std::cout << "wait0 result: " << result << std::endl;
+	auto start = std::chrono::high_resolution_clock::now();
+	for (int i = 0; i < count; i++) {
+		drm_sched_test_submit submit = {0};
+		result = ioctlRun<DRM_IOCTL_SCHED_TEST_SUBMIT, drm_sched_test_submit>(fd, &submit, nodeName);
+		drm_sched_test_wait wait = {submit.fence, 100};
+		result = ioctlRun<DRM_IOCTL_SCHED_TEST_WAIT, drm_sched_test_wait>(fd, &wait, nodeName);
+	}
+	auto end = std::chrono::high_resolution_clock::now();
+	double delay = (std::chrono::duration_cast<std::chrono::microseconds>(end - start)).count();
+	std::cout << "IOPS: " << (count * 1000000.0 )/ delay  << "/s" << std::endl;
 	return 0;
 }
 
@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
 	int result = 0;
 	static const char *nodeName = "/dev/dri/renderD128";
 	try {
-		result = run(nodeName);
+		result = run(nodeName, 10000);
 		std::cout << "result = " << result << std::endl;
 	} catch (std::exception &ex) {
 		std::cout << ex.what() << std::endl;

@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
+/*
+ * Copyright (C) 2021 Xilinx, Inc.
+ * Authors:
+ *     Sonal Santan <sonal.santan@xilinx.com>
+ */
+
 #ifndef _DRM_SCHED_TEST_H_
 #define _DRM_SCHED_TEST_H_
 
