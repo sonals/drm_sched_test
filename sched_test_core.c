@@ -56,16 +56,14 @@ spinlock_t events_lock;
 // structure describing the event to be processed
 struct event {
 	struct list_head lh;
-	struct dma_fence *fence;
-	struct sched_test_device *sdev;
+	struct sched_test_job *job;
 	bool stop;
 	int seq;
 };
 
-static struct event *pop_next_event(struct sched_test_hwemu_thread *thread_arg)
+static struct event *dequeue_next_event(struct sched_test_hwemu_thread *thread_arg)
 {
     struct event *e = NULL;
-    static int count = 0;
 
     spin_lock(&events_lock);
     if (!list_empty(&events_list)) {
@@ -74,15 +72,15 @@ static struct event *pop_next_event(struct sched_test_hwemu_thread *thread_arg)
 		    list_del(&e->lh);
     }
     spin_unlock(&events_lock);
-    drm_info(&thread_arg->dev->drm, "Popped event %p, sdev %p seq %d", e, (e ? e->sdev : NULL), (e ? e->seq : 0xffffffff));
+    drm_info(&thread_arg->dev->drm, "HW dequeued event %p, job %p seq %d", e, (e ? e->job : NULL), (e ? e->seq : 0xffffffff));
     return e;
 }
 
-static void push_next_event(struct event *e)
+static void enqueue_next_event(struct event *e, struct sched_test_device *sdev)
 {
 	static int seq = 0;
 	e->seq = seq++;
-	drm_info(&e->sdev->drm, "Pushing event %p, sdev %p, seq %d", e, e->sdev, e->seq);
+	drm_info(&sdev->drm, "Enqueueing event %p, job %p, seq %d to HW", e, e->job, e->seq);
 	spin_lock(&events_lock);
 	list_add_tail(&e->lh, &events_list);
 	spin_unlock(&events_lock);
@@ -97,17 +95,17 @@ static int sched_test_thread(void *data)
 
 	while (!kthread_should_stop()) {
 		struct event *e = NULL;
-		drm_info(&thread_arg->dev->drm, "Loop %d waiting for event", i);
-		wait_event_interruptible(wq, ((e = pop_next_event(thread_arg)) ||
+		drm_info(&thread_arg->dev->drm, "HW loop %d waiting for event", i);
+		wait_event_interruptible(wq, ((e = dequeue_next_event(thread_arg)) ||
 					      kthread_should_stop()));
 		if ((e == NULL) || e->stop) {
-			drm_info(&thread_arg->dev->drm, "breaking out of kthread loop");
+			drm_info(&thread_arg->dev->drm, "HW breaking out of kthread loop");
 			break;
 		}
-		dma_fence_signal_locked(e->fence);
+		dma_fence_signal_locked(e->job->fence);
 		i++;
 	}
-	drm_info(&thread_arg->dev->drm, "%s exit", sched_test_hw_queue_name(thread_arg->qu));
+	drm_info(&thread_arg->dev->drm, "HW %s exit", sched_test_hw_queue_name(thread_arg->qu));
 	return 0;
 }
 
@@ -123,7 +121,7 @@ int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
 
 	spin_lock_init(&events_lock);
 
-	drm_info(&sdev->drm, "init %s", sched_test_queue_name(arg->qu));
+	drm_info(&sdev->drm, "HW init %s", sched_test_queue_name(arg->qu));
 
 	INIT_LIST_HEAD(&events_list);
 	sdev->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_hw_queue_name(arg->qu));
@@ -147,8 +145,7 @@ int sched_test_hwemu_thread_stop(struct sched_test_device *sdev)
 
 	e = kzalloc(sizeof(struct event), GFP_KERNEL);
 	e->stop = true;
-	e->sdev = sdev;
-	push_next_event(e);
+	enqueue_next_event(e, sdev);
 	ret = kthread_stop(sdev->hwemu_thread);
 	sdev->hwemu_thread = NULL;
 
@@ -174,43 +171,15 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 
 void sched_test_job_fini(struct sched_test_job *job)
 {
-	dma_fence_signal_locked(job->fence); // Should call sched_test_job_free() if not already signalled
+	/*
+	 * dma_fence_signal_locked() should call sched_test_job_free() if job
+	 * is not already signalled
+	 */
+	dma_fence_signal_locked(job->fence);
 //	dma_fence_put(job->fence);
-	drm_info(&job->sdev->drm, "Cleanup2 %p", job);
+	drm_info(&job->sdev->drm, "Application called cleanup %p", job);
 }
 
-static const char *sched_test_fence_get_driver_name(struct dma_fence *fence)
-{
-	return "sched_test";
-}
-
-static const char *sched_test_fence_get_timeline_name(struct dma_fence *fence)
-{
-	const struct sched_test_fence *f = to_sched_test_fence(fence);
-	return sched_test_queue_name(f->qu);
-}
-
-const struct dma_fence_ops sched_test_fence_ops = {
-	.get_driver_name = sched_test_fence_get_driver_name,
-	.get_timeline_name = sched_test_fence_get_timeline_name,
-};
-
-/*
-static struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev, enum sched_test_queue qu)
-{
-	struct sched_test_fence *fence = kzalloc(sizeof(struct sched_test_fence), GFP_KERNEL);
-	if (!fence)
-		return ERR_PTR(-ENOMEM);
-
-	fence->dev = &sdev->drm;
-	fence->qu = qu;
-	fence->seqno = ++sdev->queue[qu].emit_seqno;
-	dma_fence_init(&fence->base, &sched_test_fence_ops, &sdev->job_lock,
-		       sdev->queue[qu].fence_context, fence->seqno);
-
-	return &fence->base;
-}
-*/
 
 static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_job,
 						   struct drm_sched_entity *sched_entity)
@@ -226,18 +195,17 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	struct sched_test_job *job = to_sched_test_job(sched_job);
 	struct event *e = kzalloc(sizeof(struct event), GFP_KERNEL);
 
-	e->fence = job->fence;
+	e->job = job;
 	e->stop = false;
-	e->sdev = job->sdev;
-	drm_info(&e->sdev->drm, "Push next event %p job %p", e, job);
-	push_next_event(e);
+	drm_info(&job->sdev->drm, "Enqueue next event %p job %p to HW queue", e, job);
+	enqueue_next_event(e, job->sdev);
 	return job->fence;
 }
 
 static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
-
+	(void)job;
 //	drm_sched_stop(&job->sched, &job->base);
 	return DRM_GPU_SCHED_STAT_NOMINAL;
 }
@@ -246,7 +214,7 @@ static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sch
 static void sched_test_job_free(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
-	drm_info(&job->sdev->drm, "Cleanup1 %p", job);
+	drm_info(&job->sdev->drm, "Auto job cleanup %p", job);
 	drm_sched_job_cleanup(sched_job);
 }
 

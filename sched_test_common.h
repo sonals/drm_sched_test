@@ -47,13 +47,6 @@ struct sched_test_file_priv {
 	struct idr job_idr;
 };
 
-struct sched_test_fence {
-	struct dma_fence base;
-	struct drm_device *dev;
-	u64 seqno;
-	enum sched_test_queue qu;
-};
-
 struct sched_test_job {
 	struct drm_sched_job base;
 	struct sched_test_device *sdev;
@@ -65,11 +58,6 @@ struct sched_test_hwemu_thread {
 	enum sched_test_queue qu;
 	u32 interval;    /* ms */
 };
-
-static inline struct sched_test_fence *to_sched_test_fence(struct dma_fence *fence)
-{
-	return (struct sched_test_fence *)fence;
-}
 
 static inline struct sched_test_job *to_sched_test_job(struct drm_sched_job *job)
 {

@@ -60,7 +60,7 @@ static int job_idr_fini(int id, void *p, void *data)
 static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 {
 	struct sched_test_file_priv *priv = file->driver_priv;
-
+	drm_info(dev, "Application exiting, harvesting all remaining jobs...");
 	idr_for_each(&priv->job_idr, job_idr_fini, priv);
 	idr_destroy(&priv->job_idr);
 	drm_sched_entity_destroy(&priv->entity);
@@ -77,11 +77,10 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 	struct sched_test_job *job;
 	int ret = 0;
 
-	job = kcalloc(1, sizeof(*job), GFP_KERNEL);
+	job = kzalloc(sizeof(*job), GFP_KERNEL);
 	if (!job)
 		return -ENOMEM;
 
-	drm_info(&sdev->drm, "Submit ioctl");
 	ret = idr_alloc(&priv->job_idr, job, 1, 0, GFP_KERNEL);
 	if (ret > 0)
 		args->fence = ret;
@@ -92,7 +91,7 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 	if (ret)
 		goto out_idr;
 
-	drm_info(&sdev->drm, "Submitted job %p", job);
+	drm_info(&sdev->drm, "Application submitted job %p", job);
 	return 0;
 
 out_idr:
@@ -110,14 +109,14 @@ int sched_test_wait_ioctl(struct drm_device *dev, void *data,
 	struct drm_sched_test_wait *args = data;
 	struct sched_test_job *job = idr_find(&priv->job_idr, args->fence);
 	signed long int left = 0;
-	int ret = 0;
 
 	if (!job)
 		return -EINVAL;
-	drm_info(&sdev->drm, "Wait ioctl");
+	drm_info(&sdev->drm, "Application wait on job %p", job);
 	left = dma_fence_wait_timeout(job->fence, true, args->timeout);
 	if (left > 0) {
 		idr_remove(&priv->job_idr, args->fence);
+		drm_info(&sdev->drm, "Application wait over for job %p", job);
 		sched_test_job_fini(job);
 		return 0;
 	}
