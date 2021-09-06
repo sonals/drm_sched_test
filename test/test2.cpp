@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <unistd.h>
 
 
 #include <iostream>
@@ -29,8 +30,10 @@ static const int LEN = 128;
 template <long unsigned int code, typename rec> int ioctlRun(int fd, rec *data, const char *nodeName)
 {
 	int result = ioctl(fd, code, data);
-	if (result < 0)
+	if (result < 0) {
+		close(fd);
 		throw std::system_error(errno, std::generic_category(), nodeName);
+	}
 	return result;
 }
 
@@ -67,6 +70,8 @@ int run(const char *nodeName, int count)
 	auto end = std::chrono::high_resolution_clock::now();
 	double delay = (std::chrono::duration_cast<std::chrono::microseconds>(end - start)).count();
 	std::cout << "IOPS: " << (count * 1000000.0 )/ delay  << "/s" << std::endl;
+
+	close(fd);
 	return 0;
 }
 
@@ -75,7 +80,7 @@ int main(int argc, char *argv[])
 	int result = 0;
 	static const char *nodeName = "/dev/dri/renderD128";
 	try {
-		result = run(nodeName, 10000);
+		result = run(nodeName, 100);
 		std::cout << "result = " << result << std::endl;
 	} catch (std::exception &ex) {
 		std::cout << ex.what() << std::endl;
