@@ -15,6 +15,7 @@
 
 #include <iostream>
 #include <cerrno>
+#include <cstdlib>
 #include <system_error>
 #include <stdexcept>
 #include <memory>
@@ -44,6 +45,15 @@ int run(const char *nodeName, int count)
 	if (fd < 0)
 		throw std::system_error(errno, std::generic_category(), nodeName);
 
+	auto ioctlLambda = [fd, nodeName](auto code, auto data) {
+				   int result = ioctl(fd, code, data);
+				   if (result < 0) {
+					   close(fd);
+					   throw std::system_error(errno, std::generic_category(), nodeName);
+				   }
+				   return result;
+			   };
+
 	drm_version version;
 	std::memset(&version, 0, sizeof(version));
 	std::unique_ptr<char[]> name(new char[LEN]);
@@ -57,19 +67,21 @@ int run(const char *nodeName, int count)
 	version.date = date.get();
 	version.date_len = LEN;
 
-	int result = ioctlRun<DRM_IOCTL_VERSION, drm_version>(fd, &version, nodeName);
+	int result = ioctlLambda(DRM_IOCTL_VERSION, &version);
 	std::cout << version.name << std::endl;
 
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
 		drm_sched_test_submit submit = {0};
-		result = ioctlRun<DRM_IOCTL_SCHED_TEST_SUBMIT, drm_sched_test_submit>(fd, &submit, nodeName);
+		result = ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submit);
 		drm_sched_test_wait wait = {submit.fence, 100};
-		result = ioctlRun<DRM_IOCTL_SCHED_TEST_WAIT, drm_sched_test_wait>(fd, &wait, nodeName);
+		result = ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
 	}
 	auto end = std::chrono::high_resolution_clock::now();
 	double delay = (std::chrono::duration_cast<std::chrono::microseconds>(end - start)).count();
-	std::cout << "IOPS: " << (count * 1000000.0 )/ delay  << "/s" << std::endl;
+	double iops = ((double)count * 1000000.0)/delay;
+	iops /= 1000;
+	std::cout << "IOPS: " << iops << " K/s" << std::endl;
 
 	close(fd);
 	return 0;
@@ -78,9 +90,29 @@ int run(const char *nodeName, int count)
 int main(int argc, char *argv[])
 {
 	int result = 0;
-	static const char *nodeName = "/dev/dri/renderD128";
 	try {
-		result = run(nodeName, 100);
+		std::string nodeName = "/dev/dri/renderD128";
+		int count = 10;
+		char c = '\0';
+		while ((c = getopt (argc, argv, "n:c:")) != -1) {
+			switch (c) {
+			case 'n':
+				nodeName = optarg;
+				break;
+			case 'c':
+				count = std::atoi(optarg);
+				break;
+			case '?':
+			default:
+				std::cout << "Usage " << argv[0] << " [-n <dev_node>] [-c <loop_count>]\n";
+				throw std::invalid_argument("");
+			}
+		}
+		if (optind < argc) {
+			std::cout << "Usage " << argv[0] << " [-n <dev_node>] [-c <loop_count>]\n";
+			throw std::invalid_argument("");
+		}
+		result = run(nodeName.c_str(), count);
 		std::cout << "result = " << result << std::endl;
 	} catch (std::exception &ex) {
 		std::cout << ex.what() << std::endl;

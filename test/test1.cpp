@@ -23,19 +23,9 @@
 
 #include "sched_test.h"
 
-// g++ -I ../uapi/ test1.cpp -ldrm
+// g++ -I ../uapi/ test1.cpp
 
 static const int LEN = 128;
-
-template <long unsigned int code, typename rec> int ioctlRun(int fd, rec *data, const char *nodeName)
-{
-	int result = ioctl(fd, code, data);
-	if (result < 0) {
-		close(fd);
-		throw std::system_error(errno, std::generic_category(), nodeName);
-	}
-	return result;
-}
 
 int run(const char *nodeName, unsigned count, bool release = true)
 {
@@ -43,6 +33,15 @@ int run(const char *nodeName, unsigned count, bool release = true)
 
 	if (fd < 0)
 		throw std::system_error(errno, std::generic_category(), nodeName);
+
+	auto ioctlLambda = [fd, nodeName](auto code, auto data) {
+				   int result = ioctl(fd, code, data);
+				   if (result < 0) {
+					   close(fd);
+					   throw std::system_error(errno, std::generic_category(), nodeName);
+				   }
+				   return result;
+			   };
 
 	drm_version version;
 	std::memset(&version, 0, sizeof(version));
@@ -57,20 +56,20 @@ int run(const char *nodeName, unsigned count, bool release = true)
 	version.date = date.get();
 	version.date_len = LEN;
 
-	int result = ioctlRun<DRM_IOCTL_VERSION, drm_version>(fd, &version, nodeName);
+	int result = ioctlLambda(DRM_IOCTL_VERSION, &version);
 	std::cout << version.name << std::endl;
 
 	std::vector<drm_sched_test_submit> submitCmds(count);
 	for (int i = 0; i < count; i++) {
 		submitCmds[i].fence = 0;
-		result = ioctlRun<DRM_IOCTL_SCHED_TEST_SUBMIT, drm_sched_test_submit>(fd, &submitCmds[i], nodeName);
-		std::cout << "submit[" << count << "]  fence: " << submitCmds[i].fence << std::endl;
+		result = ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
+		std::cout << "submit[" << i << "]  fence: " << submitCmds[i].fence << std::endl;
 	}
 
 	if (release) {
 		for (int i = 0; i < count; i++) {
 			drm_sched_test_wait wait = {submitCmds[i].fence, 100};
-			result = ioctlRun<DRM_IOCTL_SCHED_TEST_WAIT, drm_sched_test_wait>(fd, &wait, nodeName);
+			result = ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
 			std::cout << "wait[" << i << "] result: " << result << std::endl;
 		}
 	}
@@ -84,8 +83,8 @@ int main(int argc, char *argv[])
 	int result = 0;
 	static const char *nodeName = "/dev/dri/renderD128";
 	try {
-		result = run(nodeName, 2, false);
-		result = run(nodeName, 2);
+		result = run(nodeName, 10, false);
+		result = run(nodeName, 10);
 		std::cout << "result = " << result << std::endl;
 	} catch (std::exception &ex) {
 		std::cout << ex.what() << std::endl;
