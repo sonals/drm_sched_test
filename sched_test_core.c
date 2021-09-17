@@ -94,6 +94,7 @@ static int sched_test_thread(void *data)
 	struct sched_test_hwemu_thread *thread_arg = data;
 
 	while (!kthread_should_stop()) {
+		int ret = 0;
 		struct event *e = NULL;
 		drm_info(&thread_arg->dev->drm, "HW loop %d waiting for event", i);
 		wait_event_interruptible(wq, ((e = dequeue_next_event(thread_arg)) ||
@@ -102,7 +103,8 @@ static int sched_test_thread(void *data)
 			drm_info(&thread_arg->dev->drm, "HW breaking out of kthread loop");
 			break;
 		}
-		dma_fence_signal_locked(e->job->fence);
+		ret = dma_fence_signal_locked(e->job->fence);
+		drm_info(&thread_arg->dev->drm, "HW loop %d, fence status %d", i, ret);
 		i++;
 	}
 	drm_info(&thread_arg->dev->drm, "HW %s exit", sched_test_hw_queue_name(thread_arg->qu));
@@ -175,9 +177,9 @@ void sched_test_job_fini(struct sched_test_job *job)
 	 * dma_fence_signal_locked() should call sched_test_job_free() if job
 	 * is not already signalled
 	 */
-	dma_fence_signal_locked(job->fence);
+	int ret = dma_fence_signal_locked(job->fence);
 //	dma_fence_put(job->fence);
-	drm_info(&job->sdev->drm, "Application called cleanup %p", job);
+	drm_info(&job->sdev->drm, "Application called cleanup job %p, fence status %d", job, ret);
 }
 
 

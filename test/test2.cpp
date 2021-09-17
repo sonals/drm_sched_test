@@ -28,16 +28,6 @@
 
 static const int LEN = 128;
 
-template <long unsigned int code, typename rec> int ioctlRun(int fd, rec *data, const char *nodeName)
-{
-	int result = ioctl(fd, code, data);
-	if (result < 0) {
-		close(fd);
-		throw std::system_error(errno, std::generic_category(), nodeName);
-	}
-	return result;
-}
-
 int run(const char *nodeName, int count)
 {
 	int fd = open(nodeName, O_RDWR);
@@ -69,6 +59,7 @@ int run(const char *nodeName, int count)
 
 	int result = ioctlLambda(DRM_IOCTL_VERSION, &version);
 	std::cout << version.name << std::endl;
+	std::cout << version.desc << std::endl;
 
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
