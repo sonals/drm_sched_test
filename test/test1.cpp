@@ -20,6 +20,8 @@
 #include <memory>
 #include <cstring>
 #include <vector>
+#include <chrono>
+#include <thread>
 
 #include "sched_test.h"
 
@@ -107,7 +109,21 @@ int main(int argc, char *argv[])
 			throw std::invalid_argument("");
 		}
 
+		/*
+		 * In the following case application submits work and then tries to exit, hence
+		 * forcing the driver to harvest all the unfinished work. This test alone works
+		 * fine even with 200K loop
+		 */
 		result = run(nodeName, count, false);
+		/*
+		 * Adding this wait when both tests are enabled prevents the crash we see with 100K
+		 * loop, otherwise there is panic in the second run.
+		 */
+		std::this_thread::sleep_for(std::chrono::milliseconds(20000));
+		/*
+		 * In the following case, application calls wait on each work submitted. This test
+		 * alone works fine even with 200K loop
+		 */
 		result = run(nodeName, count);
 		std::cout << "result = " << result << std::endl;
 	} catch (std::exception &ex) {
