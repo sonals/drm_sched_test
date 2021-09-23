@@ -16,7 +16,6 @@
 #include <iostream>
 #include <cerrno>
 #include <system_error>
-#include <stdexcept>
 #include <memory>
 #include <cstring>
 #include <vector>
@@ -25,11 +24,9 @@
 
 #include "sched_test.h"
 
-// g++ -I ../uapi/ test1.cpp
-
 static const int LEN = 128;
 
-int run(const char *nodeName, unsigned count, bool release = true)
+int run(const char *nodeName, int count, bool release = true)
 {
 	int fd = open(nodeName, O_RDWR);
 
@@ -114,17 +111,23 @@ int main(int argc, char *argv[])
 		 * forcing the driver to harvest all the unfinished work. This test alone works
 		 * fine even with 200K loop
 		 */
+		std::cout << "Start auto job cleanup test..." << std::endl;
 		result = run(nodeName, count, false);
+		std::cout << "Finished auto job cleanup test" << std::endl;
+		std::cout << "result = " << result << std::endl;
 		/*
 		 * Adding this wait when both tests are enabled prevents the crash we see with 100K
 		 * loop, otherwise there is panic in the second run.
 		 */
-		std::this_thread::sleep_for(std::chrono::milliseconds(20000));
+		std::cout << "Sleep..." << std::endl;
+		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 		/*
 		 * In the following case, application calls wait on each work submitted. This test
 		 * alone works fine even with 200K loop
 		 */
+		std::cout << "Start regular job test..." << std::endl;
 		result = run(nodeName, count);
+		std::cout << "Finished regular job test..." << std::endl;
 		std::cout << "result = " << result << std::endl;
 	} catch (std::exception &ex) {
 		std::cout << ex.what() << std::endl;
