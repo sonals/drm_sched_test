@@ -179,7 +179,7 @@ void sched_test_job_fini(struct sched_test_job *job)
 	 */
 	//int ret = dma_fence_signal_locked(job->fence);
 	int ret = dma_fence_get_status_locked(job->fence);
-//	dma_fence_put(job->fence);
+	//dma_fence_put(job->fence);
 	drm_info(&job->sdev->drm, "Application called cleanup job %p, fence status %d", job, ret);
 }
 
@@ -196,8 +196,12 @@ static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_j
 static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
-	struct event *e = kzalloc(sizeof(struct event), GFP_KERNEL);
+	struct event *e = NULL;
 
+	if (unlikely(job->base.s_fence->finished.error))
+		return NULL;
+
+	e = kzalloc(sizeof(struct event), GFP_KERNEL);
 	e->job = job;
 	e->stop = false;
 	drm_info(&job->sdev->drm, "Enqueue next event %p job %p to HW queue", e, job);

@@ -54,6 +54,7 @@ static int job_idr_fini(int id, void *p, void *data)
 {
 	struct sched_test_job *job = p;
 	sched_test_job_fini(job);
+	kfree(job);
 	return 0;
 }
 
@@ -61,9 +62,6 @@ static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 {
 	long timeout = 0;
 	struct sched_test_file_priv *priv = file->driver_priv;
-	drm_info(dev, "Application exiting, harvesting all remaining jobs...");
-	idr_for_each(&priv->job_idr, job_idr_fini, priv);
-	idr_destroy(&priv->job_idr);
 	drm_info(dev, "Entity cleanup...");
 #if 0
 	drm_sched_entity_destroy(&priv->entity);
@@ -74,6 +72,9 @@ static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 	drm_info(dev, "Entity cleanup, timeout %ld", timeout);
 	drm_sched_entity_fini(&priv->entity);
 #endif
+	drm_info(dev, "Application exiting, harvesting all remaining jobs...");
+	idr_for_each(&priv->job_idr, job_idr_fini, priv);
+	idr_destroy(&priv->job_idr);
 	kfree(priv);
 	drm_info(dev, "Application exiting");
 	file->driver_priv = NULL;
