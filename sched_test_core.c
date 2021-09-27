@@ -104,7 +104,7 @@ static int sched_test_thread(void *data)
 			break;
 		}
 		ret = dma_fence_signal_locked(e->job->fence);
-		drm_info(&thread_arg->dev->drm, "HW loop %d, fence status %d", i, ret);
+		drm_info(&thread_arg->dev->drm, "HW loop %d, job %p fence signal request status %d", i, e->job, ret);
 		i++;
 	}
 	drm_info(&thread_arg->dev->drm, "HW %s exit", sched_test_hw_queue_name(thread_arg->qu));
@@ -177,7 +177,8 @@ void sched_test_job_fini(struct sched_test_job *job)
 	 * dma_fence_signal_locked() should call sched_test_job_free() if job
 	 * is not already signalled
 	 */
-	int ret = dma_fence_signal_locked(job->fence);
+	//int ret = dma_fence_signal_locked(job->fence);
+	int ret = dma_fence_get_status_locked(job->fence);
 //	dma_fence_put(job->fence);
 	drm_info(&job->sdev->drm, "Application called cleanup job %p, fence status %d", job, ret);
 }
@@ -207,6 +208,7 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
+	drm_info(&job->sdev->drm, "Job timeout %p", job);
 	(void)job;
 //	drm_sched_stop(&job->sched, &job->base);
 	return DRM_GPU_SCHED_STAT_NOMINAL;
@@ -236,7 +238,7 @@ static const struct drm_sched_backend_ops sched_test_fast_ops = {
 
 int sched_test_sched_init(struct sched_test_device *sdev)
 {
-	int hw_jobs_limit = 1;
+	int hw_jobs_limit = 16;
 	int job_hang_limit = 0;
 	int hang_limit_ms = 500;
 	int ret;

@@ -68,6 +68,7 @@ int run(const char *nodeName, int count, bool release = true)
 	}
 
 	if (release) {
+		//	std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		for (int i = 0; i < count; i++) {
 			drm_sched_test_wait wait = {submitCmds[i].fence, 100};
 			result = ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
@@ -126,7 +127,7 @@ int main(int argc, char *argv[])
 		 * alone works fine even with 200K loop
 		 */
 		std::cout << "Start regular job test..." << std::endl;
-		result = run(nodeName, count);
+		//result = run(nodeName, count);
 		std::cout << "Finished regular job test..." << std::endl;
 		std::cout << "result = " << result << std::endl;
 	} catch (std::exception &ex) {

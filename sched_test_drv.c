@@ -59,12 +59,23 @@ static int job_idr_fini(int id, void *p, void *data)
 
 static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 {
+	long timeout = 0;
 	struct sched_test_file_priv *priv = file->driver_priv;
 	drm_info(dev, "Application exiting, harvesting all remaining jobs...");
 	idr_for_each(&priv->job_idr, job_idr_fini, priv);
 	idr_destroy(&priv->job_idr);
+	drm_info(dev, "Entity cleanup...");
+#if 0
 	drm_sched_entity_destroy(&priv->entity);
+#else
+	// The following does not return when run with 100K load
+	// We are likely stalled in  wait_event_killable(sched->job_scheduled, drm_sched_entity_is_idle(entity));
+	timeout = drm_sched_entity_flush(&priv->entity, MAX_WAIT_SCHED_ENTITY_Q_EMPTY);
+	drm_info(dev, "Entity cleanup, timeout %ld", timeout);
+	drm_sched_entity_fini(&priv->entity);
+#endif
 	kfree(priv);
+	drm_info(dev, "Application exiting");
 	file->driver_priv = NULL;
 }
 
@@ -118,6 +129,7 @@ int sched_test_wait_ioctl(struct drm_device *dev, void *data,
 		idr_remove(&priv->job_idr, args->fence);
 		drm_info(&sdev->drm, "Application wait over for job %p", job);
 		sched_test_job_fini(job);
+		kfree(job);
 		return 0;
 	}
 	if (left < 0)
