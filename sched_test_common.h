@@ -37,7 +37,6 @@ struct sched_test_device {
 	struct platform_device *platform;
         struct sched_test_queue_state queue[SCHED_TSTQ_MAX];
 	spinlock_t job_lock;
-
 	struct task_struct *hwemu_thread;
 };
 
@@ -50,13 +49,22 @@ struct sched_test_file_priv {
 struct sched_test_job {
 	struct drm_sched_job base;
 	struct sched_test_device *sdev;
-	struct dma_fence *fence;
+	struct dma_fence *done_fence;
+	struct dma_fence *irq_fence;
+	enum sched_test_queue qu;
 };
 
 struct sched_test_hwemu_thread {
 	struct sched_test_device *dev;
 	enum sched_test_queue qu;
 	u32 interval;    /* ms */
+};
+
+struct sched_test_fence {
+	struct dma_fence base;
+	struct sched_test_device *sdev;
+	u64 seqno;
+	enum sched_test_queue qu;
 };
 
 static inline struct sched_test_job *to_sched_test_job(struct drm_sched_job *job)
@@ -67,6 +75,11 @@ static inline struct sched_test_job *to_sched_test_job(struct drm_sched_job *job
 static inline struct sched_test_device *to_sched_test_dev(struct drm_device *dev)
 {
 	return container_of(dev, struct sched_test_device, drm);
+}
+
+static inline struct sched_test_fence *to_sched_test_fence(struct dma_fence *fence)
+{
+	return container_of(fence, struct sched_test_fence, base);
 }
 
 int sched_test_sched_init(struct sched_test_device *sdev);

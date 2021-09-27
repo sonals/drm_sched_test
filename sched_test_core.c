@@ -46,6 +46,38 @@ static const char *sched_test_hw_queue_name(const enum sched_test_queue qu)
 	}
 }
 
+static const char *sched_test_fence_get_driver_name(struct dma_fence *fence)
+{
+	const struct sched_test_fence *f = to_sched_test_fence(fence);
+	return f->sdev->drm.driver->name;
+}
+
+static const char *sched_test_fence_get_timeline_name(struct dma_fence *fence)
+{
+	const struct sched_test_fence *f = to_sched_test_fence(fence);
+	return sched_test_queue_name(f->qu);
+}
+
+const struct dma_fence_ops sched_test_fence_ops = {
+	.get_driver_name = sched_test_fence_get_driver_name,
+	.get_timeline_name = sched_test_fence_get_timeline_name,
+};
+
+struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev, enum sched_test_queue qu)
+{
+	struct sched_test_fence *fence = kzalloc(sizeof(*fence), GFP_KERNEL);
+	if (!fence)
+		return ERR_PTR(-ENOMEM);
+
+	fence->sdev = sdev;
+	fence->qu = qu;
+	fence->seqno = ++sdev->queue[qu].emit_seqno;
+	dma_fence_init(&fence->base, &sched_test_fence_ops, &sdev->job_lock,
+		       sdev->queue[qu].fence_context, fence->seqno);
+
+	return &fence->base;
+}
+
 DECLARE_WAIT_QUEUE_HEAD(wq);
 
 // list events to be processed by kernel thread
@@ -103,7 +135,7 @@ static int sched_test_thread(void *data)
 			drm_info(&thread_arg->dev->drm, "HW breaking out of kthread loop");
 			break;
 		}
-		ret = dma_fence_signal_locked(e->job->fence);
+		ret = dma_fence_signal(e->job->irq_fence);
 		drm_info(&thread_arg->dev->drm, "HW loop %d, job %p fence signal request status %d", i, e->job, ret);
 		i++;
 	}
@@ -164,7 +196,7 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 		return err;
 
 	job->sdev = priv->sdev;
-	job->fence = dma_fence_get(&job->base.s_fence->finished);
+	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
 	drm_info(&job->sdev->drm, "Ready to push job %p on entity %p", job, &priv->entity);
 	drm_sched_entity_push_job(&job->base, &priv->entity);
 
@@ -178,8 +210,8 @@ void sched_test_job_fini(struct sched_test_job *job)
 	 * is not already signalled
 	 */
 	//int ret = dma_fence_signal_locked(job->fence);
-	int ret = dma_fence_get_status_locked(job->fence);
-	//dma_fence_put(job->fence);
+	int ret = dma_fence_get_status_locked(job->done_fence);
+	dma_fence_put(job->done_fence);
 	drm_info(&job->sdev->drm, "Application called cleanup job %p, fence status %d", job, ret);
 }
 
@@ -196,17 +228,30 @@ static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_j
 static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
+	struct dma_fence *fence = NULL;
 	struct event *e = NULL;
 
 	if (unlikely(job->base.s_fence->finished.error))
 		return NULL;
 
 	e = kzalloc(sizeof(struct event), GFP_KERNEL);
+	if (!e)
+		return NULL;
+	fence = sched_test_fence_create(job->sdev, job->qu);
+	if (IS_ERR(fence))
+		goto out_free;
+
+	job->irq_fence = dma_fence_get(fence);
 	e->job = job;
 	e->stop = false;
+
 	drm_info(&job->sdev->drm, "Enqueue next event %p job %p to HW queue", e, job);
 	enqueue_next_event(e, job->sdev);
-	return job->fence;
+	return job->irq_fence;
+
+out_free:
+	kfree(e);
+	return NULL;
 }
 
 static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sched_job)
@@ -223,6 +268,7 @@ static void sched_test_job_free(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
 	drm_info(&job->sdev->drm, "Auto job cleanup %p", job);
+	dma_fence_put(job->irq_fence);
 	drm_sched_job_cleanup(sched_job);
 }
 
