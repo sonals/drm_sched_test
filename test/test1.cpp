@@ -26,7 +26,7 @@
 
 static const int LEN = 128;
 
-int run(const char *nodeName, int count, bool release = true)
+void run(const char *nodeName, int count, bool release = true)
 {
 	int fd = open(nodeName, O_RDWR);
 
@@ -55,35 +55,33 @@ int run(const char *nodeName, int count, bool release = true)
 	version.date = date.get();
 	version.date_len = LEN;
 
-	int result = ioctlLambda(DRM_IOCTL_VERSION, &version);
+	ioctlLambda(DRM_IOCTL_VERSION, &version);
 	std::cout << version.name << std::endl;
 	std::cout << version.desc << std::endl;
 
 	std::vector<drm_sched_test_submit> submitCmds(count);
+	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
 		submitCmds[i].fence = 0;
-		result = ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
-		std::cout << (release ? "R-" : "A-");
-		std::cout << "submit[" << i << "]  fence: " << submitCmds[i].fence << std::endl;
+		ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
 	}
 
 	if (release) {
-		//	std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		for (int i = 0; i < count; i++) {
 			drm_sched_test_wait wait = {submitCmds[i].fence, 100};
-			result = ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
-			std::cout << (release ? "R-" : "A-");
-			std::cout << "wait[" << i << "] result: " << result << std::endl;
+			ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
 		}
 	}
-
+	auto end = std::chrono::high_resolution_clock::now();
+	double delay = (std::chrono::duration_cast<std::chrono::microseconds>(end - start)).count();
+	double iops = ((double)count * 1000000.0)/delay;
+	iops /= 1000;
+	std::cout << "IOPS: " << iops << " K/s" << std::endl;
 	close(fd);
-	return 0;
 }
 
 int main(int argc, char *argv[])
 {
-	int result = 0;
 	static const char *nodeName = "/dev/dri/renderD128";
 	try {
 		int count = 10;
@@ -107,31 +105,15 @@ int main(int argc, char *argv[])
 			throw std::invalid_argument("");
 		}
 
-		/*
-		 * In the following case application submits work and then tries to exit, hence
-		 * forcing the driver to harvest all the unfinished work. This test alone works
-		 * fine even with 200K loop
-		 */
 		std::cout << "Start auto job cleanup test..." << std::endl;
-		result = run(nodeName, count, false);
+		run(nodeName, count, false);
 		std::cout << "Finished auto job cleanup test" << std::endl;
-		std::cout << "result = " << result << std::endl;
-		/*
-		 * Adding this wait when both tests are enabled prevents the crash we see with 100K
-		 * loop, otherwise there is panic in the second run.
-		 */
-		std::cout << "Sleep..." << std::endl;
-		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-		/*
-		 * In the following case, application calls wait on each work submitted. This test
-		 * alone works fine even with 200K loop
-		 */
 		std::cout << "Start regular job test..." << std::endl;
-		//result = run(nodeName, count);
+		run(nodeName, count);
 		std::cout << "Finished regular job test..." << std::endl;
-		std::cout << "result = " << result << std::endl;
 	} catch (std::exception &ex) {
 		std::cout << ex.what() << std::endl;
+		return 1;
 	}
-	return result;
+	return 0;
 }

@@ -209,7 +209,6 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	job->sdev = priv->sdev;
 	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
 	drm_info(&job->sdev->drm, "KREF GET %p", job);
-	kref_get(&job->refcount);
 	drm_info(&job->sdev->drm, "Ready to push job %p on entity %p", job, &priv->entity);
 	drm_sched_entity_push_job(&job->base, &priv->entity);
 

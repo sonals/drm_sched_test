@@ -130,7 +130,6 @@ int sched_test_wait_ioctl(struct drm_device *dev, void *data,
 		idr_remove(&priv->job_idr, args->fence);
 		drm_info(&sdev->drm, "Application wait over for job %p", job);
 		sched_test_job_fini(job);
-//		kfree(job);
 		return 0;
 	}
 	if (left < 0)
