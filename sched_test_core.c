@@ -112,7 +112,6 @@ static struct event *dequeue_next_event(struct sched_test_hwemu_thread *thread_a
 		    list_del(&e->lh);
     }
     spin_unlock(&events_lock);
-    drm_info(&thread_arg->dev->drm, "HW dequeued event %p, job %p seq %d", e, (e ? e->job : NULL), (e ? e->seq : 0xffffffff));
     return e;
 }
 
@@ -120,7 +119,6 @@ static void enqueue_next_event(struct event *e, struct sched_test_device *sdev)
 {
 	static int seq = 0;
 	e->seq = seq++;
-	drm_info(&sdev->drm, "Enqueueing event %p, job %p, seq %d to HW", e, e->job, e->seq);
 	spin_lock(&events_lock);
 	list_add_tail(&e->lh, &events_list);
 	spin_unlock(&events_lock);
@@ -136,18 +134,15 @@ static int sched_test_thread(void *data)
 	while (!kthread_should_stop()) {
 		int ret = 0;
 		struct event *e = NULL;
-		drm_info(&thread_arg->dev->drm, "HW loop %d waiting for event", i);
 		wait_event_interruptible(wq, ((e = dequeue_next_event(thread_arg)) ||
 					      kthread_should_stop()));
-		if ((e == NULL) || e->stop) {
+		if (e->stop) {
 			drm_info(&thread_arg->dev->drm, "HW breaking out of kthread loop");
 			break;
 		}
 		ret = dma_fence_signal(e->job->irq_fence);
-		drm_info(&thread_arg->dev->drm, "HW loop %d, job %p fence signal request status %d", i, e->job, ret);
 		i++;
 	}
-	drm_info(&thread_arg->dev->drm, "HW %s exit", sched_test_hw_queue_name(thread_arg->qu));
 	return 0;
 }
 
@@ -207,7 +202,6 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	job->free = sched_test_job_free_lambda;
 	job->sdev = priv->sdev;
 	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
-	drm_info(&job->sdev->drm, "Ready to push job %p on entity %p", job, &priv->entity);
 	drm_sched_entity_push_job(&job->base, &priv->entity);
 
 	return err;
@@ -215,23 +209,14 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 
 void sched_test_job_fini(struct sched_test_job *job)
 {
-	/*
-	 * dma_fence_signal_locked() should call sched_test_job_free() if job
-	 * is not already signalled
-	 */
-	//int ret = dma_fence_signal_locked(job->fence);
-	int ret = dma_fence_get_status_locked(job->done_fence);
 	dma_fence_put(job->done_fence);
 	kref_put(&job->refcount, job->free);
-	drm_info(&job->sdev->drm, "Application called cleanup job %p, fence status %d", job, ret);
 }
 
 
 static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_job,
 						   struct drm_sched_entity *sched_entity)
 {
-	struct sched_test_job *job = to_sched_test_job(sched_job);
-	drm_info(&job->sdev->drm, "No dependency for job %p", job);
 	return NULL;
 }
 
@@ -256,7 +241,6 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	e->job = job;
 	e->stop = false;
 	kref_get(&job->refcount);
-	drm_info(&job->sdev->drm, "Enqueue next event %p job %p to HW queue", e, job);
 	enqueue_next_event(e, job->sdev);
 	return job->irq_fence;
 
@@ -267,10 +251,6 @@ out_free:
 
 static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sched_job)
 {
-	struct sched_test_job *job = to_sched_test_job(sched_job);
-	drm_info(&job->sdev->drm, "Job timeout %p", job);
-	(void)job;
-//	drm_sched_stop(&job->sched, &job->base);
 	return DRM_GPU_SCHED_STAT_NOMINAL;
 }
 
@@ -278,7 +258,6 @@ static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sch
 static void sched_test_job_free(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
-	drm_info(&job->sdev->drm, "Auto job cleanup %p", job);
 	dma_fence_put(job->irq_fence);
 	drm_sched_job_cleanup(sched_job);
 	kref_put(&job->refcount, job->free);

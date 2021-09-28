@@ -59,18 +59,8 @@ static int job_idr_fini(int id, void *p, void *data)
 
 static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 {
-	long timeout = 0;
 	struct sched_test_file_priv *priv = file->driver_priv;
-	drm_info(dev, "Entity cleanup...");
-#if 0
 	drm_sched_entity_destroy(&priv->entity);
-#else
-	// The following does not return when run with 100K load
-	// We are likely stalled in  wait_event_killable(sched->job_scheduled, drm_sched_entity_is_idle(entity));
-	timeout = drm_sched_entity_flush(&priv->entity, MAX_WAIT_SCHED_ENTITY_Q_EMPTY);
-	drm_info(dev, "Entity cleanup, timeout %ld", timeout);
-	drm_sched_entity_fini(&priv->entity);
-#endif
 	drm_info(dev, "Application exiting, harvesting all remaining jobs...");
 	idr_for_each(&priv->job_idr, job_idr_fini, priv);
 	idr_destroy(&priv->job_idr);
@@ -82,7 +72,6 @@ static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 			    struct drm_file *file_priv)
 {
-	struct sched_test_device *sdev = to_sched_test_dev(dev);
 	struct sched_test_file_priv *priv = file_priv->driver_priv;
 	struct drm_sched_test_submit *args = data;
 	struct sched_test_job *job;
@@ -102,8 +91,6 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 	ret = sched_test_job_init(job, priv);
 	if (ret)
 		goto out_idr;
-
-	drm_info(&sdev->drm, "Application submitted job %p", job);
 	return 0;
 
 out_idr:
@@ -116,7 +103,6 @@ out_free:
 int sched_test_wait_ioctl(struct drm_device *dev, void *data,
 			  struct drm_file *file_priv)
 {
-	struct sched_test_device *sdev = to_sched_test_dev(dev);
 	struct sched_test_file_priv *priv = file_priv->driver_priv;
 	struct drm_sched_test_wait *args = data;
 	struct sched_test_job *job = idr_find(&priv->job_idr, args->fence);
@@ -124,11 +110,9 @@ int sched_test_wait_ioctl(struct drm_device *dev, void *data,
 
 	if (!job)
 		return -EINVAL;
-	drm_info(&sdev->drm, "Application wait on job %p", job);
 	left = dma_fence_wait_timeout(job->done_fence, true, args->timeout);
 	if (left > 0) {
 		idr_remove(&priv->job_idr, args->fence);
-		drm_info(&sdev->drm, "Application wait over for job %p", job);
 		sched_test_job_fini(job);
 		return 0;
 	}

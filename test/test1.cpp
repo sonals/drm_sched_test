@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
 {
 	static const char *nodeName = "/dev/dri/renderD128";
 	try {
-		int count = 10;
+		int count = 100;
 		char c = '\0';
 		while ((c = getopt (argc, argv, "n:c:")) != -1) {
 			switch (c) {

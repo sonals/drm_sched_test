@@ -28,7 +28,7 @@
 
 static const int LEN = 128;
 
-int run(const char *nodeName, int count)
+void run(const char *nodeName, int count)
 {
 	int fd = open(nodeName, O_RDWR);
 
@@ -57,16 +57,16 @@ int run(const char *nodeName, int count)
 	version.date = date.get();
 	version.date_len = LEN;
 
-	int result = ioctlLambda(DRM_IOCTL_VERSION, &version);
+	ioctlLambda(DRM_IOCTL_VERSION, &version);
 	std::cout << version.name << std::endl;
 	std::cout << version.desc << std::endl;
 
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
 		drm_sched_test_submit submit = {0};
-		result = ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submit);
+		ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submit);
 		drm_sched_test_wait wait = {submit.fence, 100};
-		result = ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
+		ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
 	}
 	auto end = std::chrono::high_resolution_clock::now();
 	double delay = (std::chrono::duration_cast<std::chrono::microseconds>(end - start)).count();
@@ -75,15 +75,13 @@ int run(const char *nodeName, int count)
 	std::cout << "IOPS: " << iops << " K/s" << std::endl;
 
 	close(fd);
-	return 0;
 }
 
 int main(int argc, char *argv[])
 {
-	int result = 0;
 	try {
 		std::string nodeName = "/dev/dri/renderD128";
-		int count = 10;
+		int count = 100;
 		char c = '\0';
 		while ((c = getopt (argc, argv, "n:c:")) != -1) {
 			switch (c) {
@@ -103,10 +101,10 @@ int main(int argc, char *argv[])
 			std::cout << "Usage " << argv[0] << " [-n <dev_node>] [-c <loop_count>]\n";
 			throw std::invalid_argument("");
 		}
-		result = run(nodeName.c_str(), count);
-		std::cout << "result = " << result << std::endl;
+		run(nodeName.c_str(), count);
 	} catch (std::exception &ex) {
 		std::cout << ex.what() << std::endl;
+		return 1;
 	}
-	return result;
+	return 0;
 }
