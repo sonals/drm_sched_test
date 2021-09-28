@@ -19,3 +19,4 @@ clean:
 
 run: all
 	./test1 -c 10000
+	./test2 -c 10000
