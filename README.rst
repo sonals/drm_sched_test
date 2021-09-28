@@ -2,7 +2,7 @@
 Linux DRM Scheduler Selftest
 ============================
 
-Linux DRM Driver sched_test
+Linux DRM sched_test Driver
 ***************************
 
 *sched_test* is simple DRM driver which exposes a RENDER interface with ioctls to
@@ -21,29 +21,35 @@ Building the driver
  make
 
 
-Testing
-*******
+Test Applications
+*****************
 
 There are currently two tests: test1 and test2
 
-Building the Test
------------------
+Building the Test Applications
+------------------------------
 
 ::
+
  cd drm_sched_test/test
  make
 
-Running the Test
-----------------
+Running the Test Applications
+-----------------------------
 
 ::
+
  cd drm_sched_test
  make run
 
 Benchmarking the Scheduler
 --------------------------
 
+The tests print throughput numbers as IOPS. Run the tests with large iteration
+loops like this
+
 ::
+
  cd drm_sched_test
  make
  ./test1 -c 1000000
