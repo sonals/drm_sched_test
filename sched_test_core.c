@@ -78,6 +78,15 @@ struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev, enum s
 	return &fence->base;
 }
 
+static void
+sched_test_job_free_lambda(struct kref *ref)
+{
+	struct sched_test_job *job = container_of(ref, struct sched_test_job,
+						  refcount);
+	drm_info(&job->sdev->drm, "Freeing job %p", job);
+	kfree(job);
+}
+
 DECLARE_WAIT_QUEUE_HEAD(wq);
 
 // list events to be processed by kernel thread
@@ -195,8 +204,12 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	if (err)
 		return err;
 
+	kref_init(&job->refcount);
+	job->free = sched_test_job_free_lambda;
 	job->sdev = priv->sdev;
 	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
+	drm_info(&job->sdev->drm, "KREF GET %p", job);
+	kref_get(&job->refcount);
 	drm_info(&job->sdev->drm, "Ready to push job %p on entity %p", job, &priv->entity);
 	drm_sched_entity_push_job(&job->base, &priv->entity);
 
@@ -212,6 +225,8 @@ void sched_test_job_fini(struct sched_test_job *job)
 	//int ret = dma_fence_signal_locked(job->fence);
 	int ret = dma_fence_get_status_locked(job->done_fence);
 	dma_fence_put(job->done_fence);
+	drm_info(&job->sdev->drm, "KREF PUT %p", job);
+	kref_put(&job->refcount, job->free);
 	drm_info(&job->sdev->drm, "Application called cleanup job %p, fence status %d", job, ret);
 }
 
@@ -244,7 +259,8 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	job->irq_fence = dma_fence_get(fence);
 	e->job = job;
 	e->stop = false;
-
+	drm_info(&job->sdev->drm, "KREF GET %p", job);
+	kref_get(&job->refcount);
 	drm_info(&job->sdev->drm, "Enqueue next event %p job %p to HW queue", e, job);
 	enqueue_next_event(e, job->sdev);
 	return job->irq_fence;
@@ -270,6 +286,8 @@ static void sched_test_job_free(struct drm_sched_job *sched_job)
 	drm_info(&job->sdev->drm, "Auto job cleanup %p", job);
 	dma_fence_put(job->irq_fence);
 	drm_sched_job_cleanup(sched_job);
+	drm_info(&job->sdev->drm, "KREF PUT %p", job);
+	kref_put(&job->refcount, job->free);
 }
 
 static const struct drm_sched_backend_ops sched_test_regular_ops = {

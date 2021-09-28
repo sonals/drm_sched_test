@@ -48,10 +48,13 @@ struct sched_test_file_priv {
 
 struct sched_test_job {
 	struct drm_sched_job base;
+	struct kref refcount;
 	struct sched_test_device *sdev;
 	struct dma_fence *done_fence;
 	struct dma_fence *irq_fence;
 	enum sched_test_queue qu;
+
+	void (*free)(struct kref *ref);
 };
 
 struct sched_test_hwemu_thread {

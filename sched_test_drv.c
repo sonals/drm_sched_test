@@ -54,7 +54,6 @@ static int job_idr_fini(int id, void *p, void *data)
 {
 	struct sched_test_job *job = p;
 	sched_test_job_fini(job);
-	kfree(job);
 	return 0;
 }
 
@@ -73,8 +72,8 @@ static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 	drm_sched_entity_fini(&priv->entity);
 #endif
 	drm_info(dev, "Application exiting, harvesting all remaining jobs...");
-//	idr_for_each(&priv->job_idr, job_idr_fini, priv);
-//	idr_destroy(&priv->job_idr);
+	idr_for_each(&priv->job_idr, job_idr_fini, priv);
+	idr_destroy(&priv->job_idr);
 	kfree(priv);
 	drm_info(dev, "Application exiting");
 	file->driver_priv = NULL;
@@ -131,7 +130,7 @@ int sched_test_wait_ioctl(struct drm_device *dev, void *data,
 		idr_remove(&priv->job_idr, args->fence);
 		drm_info(&sdev->drm, "Application wait over for job %p", job);
 		sched_test_job_fini(job);
-		kfree(job);
+//		kfree(job);
 		return 0;
 	}
 	if (left < 0)
