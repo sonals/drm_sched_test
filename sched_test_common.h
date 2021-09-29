@@ -32,12 +32,26 @@ struct sched_test_queue_state {
 	u64 emit_seqno;
 };
 
+/* Helper struct for the HW emulation thread */
+struct sched_test_hwemu_thread {
+	struct sched_test_device *dev;
+	/* Currently not used; instead use from sched_test_device */
+	struct task_struct *hwemu_thread;
+	/* list of events to be processed by the kernel thread */
+	struct list_head events_list;
+	spinlock_t events_lock;
+	enum sched_test_queue qu;
+};
+
 struct sched_test_device {
 	struct drm_device drm;
 	struct platform_device *platform;
         struct sched_test_queue_state queue[SCHED_TSTQ_MAX];
+	/* Used for fence locking between scheduler and emulated HW thread */
 	spinlock_t job_lock;
+	/* Kernel thread emulating HW */
 	struct task_struct *hwemu_thread;
+	struct sched_test_hwemu_thread *hwemu_thread_arg;
 };
 
 struct sched_test_file_priv {
@@ -50,17 +64,14 @@ struct sched_test_job {
 	struct drm_sched_job base;
 	struct kref refcount;
 	struct sched_test_device *sdev;
+	/* Reference to the 'finished' fence owned by the drm_sched_job */
 	struct dma_fence *done_fence;
+	/* Fence created by the driver and used between scheduler and emulated HW thread */
 	struct dma_fence *irq_fence;
 	enum sched_test_queue qu;
 
+	/* Callback for the freeing of the job on refcount going to 0. */
 	void (*free)(struct kref *ref);
-};
-
-struct sched_test_hwemu_thread {
-	struct sched_test_device *dev;
-	enum sched_test_queue qu;
-	u32 interval;    /* ms */
 };
 
 struct sched_test_fence {

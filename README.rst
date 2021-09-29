@@ -7,10 +7,10 @@ Linux DRM sched_test Driver
 
 *sched_test* is simple DRM driver which exposes a RENDER interface with ioctls to
 submit (DRM_IOCTL_SCHED_TEST_SUBMIT) a dummy task and wait (DRM_IOCTL_SCHED_TEST_WAIT)
-for completion. The driver uses dedicated kernel thread to emulate a real HW queue.
-The DRM scheduler submits jobs to this emulated HW queue and waits for notification
-from the HW thread. The emulated HW thread tries to immediately complete the task by
-notifying the scheduler.
+for completion of the dummy task. The driver uses dedicated kernel thread to emulate
+a real HW queue. The DRM scheduler instantiated by this driver submits jobs to this
+emulated HW queue and waits for notification from the HW thread. The emulated HW thread
+tries to immediately complete the task by notifying the scheduler.
 
 Building the driver
 -------------------

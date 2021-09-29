@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-2.1 OR MIT
+# # SPDX-License-Identifier: MIT
 #
 # Copyright (C) 2021 Xilinx, Inc.
 # Authors:

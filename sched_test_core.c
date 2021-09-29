@@ -88,9 +88,6 @@ sched_test_job_free_lambda(struct kref *ref)
 
 DECLARE_WAIT_QUEUE_HEAD(wq);
 
-// list events to be processed by kernel thread
-struct list_head events_list;
-spinlock_t events_lock;
 
 
 // structure describing the event to be processed
@@ -101,27 +98,27 @@ struct event {
 	int seq;
 };
 
-static struct event *dequeue_next_event(struct sched_test_hwemu_thread *thread_arg)
+static struct event *dequeue_next_event(struct sched_test_hwemu_thread *arg)
 {
     struct event *e = NULL;
 
-    spin_lock(&events_lock);
-    if (!list_empty(&events_list)) {
-	    e = list_first_entry(&events_list, struct event, lh);
+    spin_lock(&arg->events_lock);
+    if (!list_empty(&arg->events_list)) {
+	    e = list_first_entry(&arg->events_list, struct event, lh);
 	    if (e)
 		    list_del(&e->lh);
     }
-    spin_unlock(&events_lock);
+    spin_unlock(&arg->events_lock);
     return e;
 }
 
-static void enqueue_next_event(struct event *e, struct sched_test_device *sdev)
+static void enqueue_next_event(struct event *e, struct sched_test_hwemu_thread *arg)
 {
 	static int seq = 0;
 	e->seq = seq++;
-	spin_lock(&events_lock);
-	list_add_tail(&e->lh, &events_list);
-	spin_unlock(&events_lock);
+	spin_lock(&arg->events_lock);
+	list_add_tail(&e->lh, &arg->events_list);
+	spin_unlock(&arg->events_lock);
 	wake_up(&wq);
 }
 
@@ -148,19 +145,21 @@ static int sched_test_thread(void *data)
 
 int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
 {
-	int err = 0;
 	struct sched_test_hwemu_thread *arg = kzalloc(sizeof(struct sched_test_hwemu_thread), GFP_KERNEL);
+	int err = 0;
+
 	if (!arg)
 		return -ENOMEM;
+	sdev->hwemu_thread_arg = arg;
+
 	arg->dev = sdev;
-	arg->interval = 1;
 	arg->qu = SCHED_TSTQ_A;
 
-	spin_lock_init(&events_lock);
+	spin_lock_init(&arg->events_lock);
 
 	drm_info(&sdev->drm, "HW init %s", sched_test_queue_name(arg->qu));
 
-	INIT_LIST_HEAD(&events_list);
+	INIT_LIST_HEAD(&arg->events_list);
 	sdev->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_hw_queue_name(arg->qu));
 
 	if(IS_ERR(sdev->hwemu_thread)) {
@@ -169,7 +168,7 @@ int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
 		sdev->hwemu_thread = NULL;
 		return err;
 	}
-	return 0;
+	return err;
 }
 
 int sched_test_hwemu_thread_stop(struct sched_test_device *sdev)
@@ -182,7 +181,7 @@ int sched_test_hwemu_thread_stop(struct sched_test_device *sdev)
 
 	e = kzalloc(sizeof(struct event), GFP_KERNEL);
 	e->stop = true;
-	enqueue_next_event(e, sdev);
+	enqueue_next_event(e, sdev->hwemu_thread_arg);
 	ret = kthread_stop(sdev->hwemu_thread);
 	sdev->hwemu_thread = NULL;
 
@@ -241,7 +240,7 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	e->job = job;
 	e->stop = false;
 	kref_get(&job->refcount);
-	enqueue_next_event(e, job->sdev);
+	enqueue_next_event(e, job->sdev->hwemu_thread_arg);
 	return job->irq_fence;
 
 out_free:
