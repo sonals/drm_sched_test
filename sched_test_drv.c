@@ -195,6 +195,7 @@ static void __exit sched_test_exit(void)
 	struct platform_device *pdev = sched_test_device_obj->platform;
 
 	sched_test_hwemu_thread_stop(sched_test_device_obj);
+	kfree(sched_test_device_obj->hwemu);
 	drm_dev_unregister(&sched_test_device_obj->drm);
 	sched_test_sched_fini(sched_test_device_obj);
 	devres_release_group(&pdev->dev, NULL);

@@ -33,11 +33,11 @@ struct sched_test_queue_state {
 };
 
 /* Helper struct for the HW emulation thread */
-struct sched_test_hwemu_thread {
+struct sched_test_hwemu {
 	struct sched_test_device *dev;
-	/* Currently not used; instead use from sched_test_device */
+	/* Kernel thread emulating HW and processing jobs submitted by scheduler */
 	struct task_struct *hwemu_thread;
-	/* list of events to be processed by the kernel thread */
+	/* List of jobs to be processed by the kernel thread */
 	struct list_head events_list;
 	spinlock_t events_lock;
 	enum sched_test_queue qu;
@@ -50,8 +50,7 @@ struct sched_test_device {
 	/* Used for fence locking between scheduler and emulated HW thread */
 	spinlock_t job_lock;
 	/* Kernel thread emulating HW */
-	struct task_struct *hwemu_thread;
-	struct sched_test_hwemu_thread *hwemu_thread_arg;
+	struct sched_test_hwemu *hwemu;
 };
 
 struct sched_test_file_priv {

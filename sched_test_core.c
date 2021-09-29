@@ -98,7 +98,7 @@ struct event {
 	int seq;
 };
 
-static struct event *dequeue_next_event(struct sched_test_hwemu_thread *arg)
+static struct event *dequeue_next_event(struct sched_test_hwemu *arg)
 {
     struct event *e = NULL;
 
@@ -112,7 +112,7 @@ static struct event *dequeue_next_event(struct sched_test_hwemu_thread *arg)
     return e;
 }
 
-static void enqueue_next_event(struct event *e, struct sched_test_hwemu_thread *arg)
+static void enqueue_next_event(struct event *e, struct sched_test_hwemu *arg)
 {
 	static int seq = 0;
 	e->seq = seq++;
@@ -126,15 +126,15 @@ static void enqueue_next_event(struct event *e, struct sched_test_hwemu_thread *
 static int sched_test_thread(void *data)
 {
 	int i = 0;
-	struct sched_test_hwemu_thread *thread_arg = data;
+	struct sched_test_hwemu *arg = data;
 
 	while (!kthread_should_stop()) {
 		int ret = 0;
 		struct event *e = NULL;
-		wait_event_interruptible(wq, ((e = dequeue_next_event(thread_arg)) ||
+		wait_event_interruptible(wq, ((e = dequeue_next_event(arg)) ||
 					      kthread_should_stop()));
 		if (e->stop) {
-			drm_info(&thread_arg->dev->drm, "HW breaking out of kthread loop");
+			drm_info(&arg->dev->drm, "HW breaking out of kthread loop");
 			break;
 		}
 		ret = dma_fence_signal(e->job->irq_fence);
@@ -145,29 +145,33 @@ static int sched_test_thread(void *data)
 
 int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
 {
-	struct sched_test_hwemu_thread *arg = kzalloc(sizeof(struct sched_test_hwemu_thread), GFP_KERNEL);
+	struct sched_test_hwemu *arg = kzalloc(sizeof(struct sched_test_hwemu), GFP_KERNEL);
 	int err = 0;
 
 	if (!arg)
 		return -ENOMEM;
-	sdev->hwemu_thread_arg = arg;
+	sdev->hwemu = arg;
 
 	arg->dev = sdev;
 	arg->qu = SCHED_TSTQ_A;
 
 	spin_lock_init(&arg->events_lock);
 
-	drm_info(&sdev->drm, "HW init %s", sched_test_queue_name(arg->qu));
-
 	INIT_LIST_HEAD(&arg->events_list);
-	sdev->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_hw_queue_name(arg->qu));
+	arg->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_hw_queue_name(arg->qu));
 
-	if(IS_ERR(sdev->hwemu_thread)) {
+	if(IS_ERR(arg->hwemu_thread)) {
 		drm_err(&sdev->drm, "create %s", sched_test_hw_queue_name(arg->qu));
-		err = PTR_ERR(sdev->hwemu_thread);
-		sdev->hwemu_thread = NULL;
+		err = PTR_ERR(arg->hwemu_thread);
+		arg->hwemu_thread = NULL;
+		goto out_free;
 		return err;
 	}
+	drm_info(&sdev->drm, "HW init %s", sched_test_queue_name(arg->qu));
+	return 0;
+out_free:
+	kfree(arg);
+	sdev->hwemu = NULL;
 	return err;
 }
 
@@ -176,14 +180,14 @@ int sched_test_hwemu_thread_stop(struct sched_test_device *sdev)
 	struct event *e;
 	int ret;
 
-	if (!sdev->hwemu_thread)
+	if (!sdev->hwemu->hwemu_thread)
 		return 0;
 
 	e = kzalloc(sizeof(struct event), GFP_KERNEL);
 	e->stop = true;
-	enqueue_next_event(e, sdev->hwemu_thread_arg);
-	ret = kthread_stop(sdev->hwemu_thread);
-	sdev->hwemu_thread = NULL;
+	enqueue_next_event(e, sdev->hwemu);
+	ret = kthread_stop(sdev->hwemu->hwemu_thread);
+	sdev->hwemu->hwemu_thread = NULL;
 
 	drm_info(&sdev->drm, "stop %s", sched_test_hw_queue_name(SCHED_TSTQ_A));
 	return ret;
@@ -240,7 +244,7 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	e->job = job;
 	e->stop = false;
 	kref_get(&job->refcount);
-	enqueue_next_event(e, job->sdev->hwemu_thread_arg);
+	enqueue_next_event(e, job->sdev->hwemu);
 	return job->irq_fence;
 
 out_free:
