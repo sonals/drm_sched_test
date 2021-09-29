@@ -72,7 +72,7 @@ struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev, enum s
 	fence->sdev = sdev;
 	fence->qu = qu;
 	fence->seqno = ++sdev->queue[qu].emit_seqno;
-	dma_fence_init(&fence->base, &sched_test_fence_ops, &sdev->job_lock,
+	dma_fence_init(&fence->base, &sched_test_fence_ops, &sdev->hwemu[qu]->job_lock,
 		       sdev->queue[qu].fence_context, fence->seqno);
 
 	return &fence->base;
@@ -143,19 +143,20 @@ static int sched_test_thread(void *data)
 	return 0;
 }
 
-int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
+int sched_test_hwemu_thread_start(struct sched_test_device *sdev, enum sched_test_queue qu)
 {
 	struct sched_test_hwemu *arg = kzalloc(sizeof(struct sched_test_hwemu), GFP_KERNEL);
 	int err = 0;
 
 	if (!arg)
 		return -ENOMEM;
-	sdev->hwemu = arg;
+	sdev->hwemu[qu] = arg;
 
 	arg->dev = sdev;
 	arg->qu = SCHED_TSTQ_A;
 
 	spin_lock_init(&arg->events_lock);
+	spin_lock_init(&arg->job_lock);
 
 	INIT_LIST_HEAD(&arg->events_list);
 	arg->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_hw_queue_name(arg->qu));
@@ -171,25 +172,25 @@ int sched_test_hwemu_thread_start(struct sched_test_device *sdev)
 	return 0;
 out_free:
 	kfree(arg);
-	sdev->hwemu = NULL;
+	sdev->hwemu[qu] = NULL;
 	return err;
 }
 
-int sched_test_hwemu_thread_stop(struct sched_test_device *sdev)
+int sched_test_hwemu_thread_stop(struct sched_test_device *sdev, enum sched_test_queue qu)
 {
 	struct event *e;
 	int ret;
 
-	if (!sdev->hwemu->hwemu_thread)
+	if (!sdev->hwemu[qu]->hwemu_thread)
 		return 0;
 
 	e = kzalloc(sizeof(struct event), GFP_KERNEL);
 	e->stop = true;
-	enqueue_next_event(e, sdev->hwemu);
-	ret = kthread_stop(sdev->hwemu->hwemu_thread);
-	sdev->hwemu->hwemu_thread = NULL;
+	enqueue_next_event(e, sdev->hwemu[qu]);
+	ret = kthread_stop(sdev->hwemu[qu]->hwemu_thread);
+	sdev->hwemu[qu]->hwemu_thread = NULL;
 
-	drm_info(&sdev->drm, "stop %s", sched_test_hw_queue_name(SCHED_TSTQ_A));
+	drm_info(&sdev->drm, "stop %s", sched_test_hw_queue_name(qu));
 	return ret;
 }
 
@@ -244,7 +245,7 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	e->job = job;
 	e->stop = false;
 	kref_get(&job->refcount);
-	enqueue_next_event(e, job->sdev->hwemu);
+	enqueue_next_event(e, job->sdev->hwemu[job->qu]);
 	return job->irq_fence;
 
 out_free:

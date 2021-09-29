@@ -39,7 +39,10 @@ struct sched_test_hwemu {
 	struct task_struct *hwemu_thread;
 	/* List of jobs to be processed by the kernel thread */
 	struct list_head events_list;
+	/* Used to protect the job (events_list) queue */
 	spinlock_t events_lock;
+	/* Used for fence locking between scheduler and emulated HW thread */
+	spinlock_t job_lock;
 	enum sched_test_queue qu;
 };
 
@@ -47,10 +50,8 @@ struct sched_test_device {
 	struct drm_device drm;
 	struct platform_device *platform;
         struct sched_test_queue_state queue[SCHED_TSTQ_MAX];
-	/* Used for fence locking between scheduler and emulated HW thread */
-	spinlock_t job_lock;
-	/* Kernel thread emulating HW */
-	struct sched_test_hwemu *hwemu;
+	/* Kernel threads emulating HW queues*/
+	struct sched_test_hwemu *hwemu[SCHED_TSTQ_MAX];
 };
 
 struct sched_test_file_priv {
@@ -101,7 +102,7 @@ void sched_test_sched_fini(struct sched_test_device *sdev);
 int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv *priv);
 void sched_test_job_fini(struct sched_test_job *job);
 
-int sched_test_hwemu_thread_start(struct sched_test_device *sdev);
-int sched_test_hwemu_thread_stop(struct sched_test_device *sdev);
+int sched_test_hwemu_thread_start(struct sched_test_device *sdev, enum sched_test_queue qu);
+int sched_test_hwemu_thread_stop(struct sched_test_device *sdev, enum sched_test_queue qu);
 
 #endif

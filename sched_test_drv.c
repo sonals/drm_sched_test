@@ -171,9 +171,7 @@ static int __init sched_test_init(void)
 	if (ret)
 		goto out_sched;
 
-	spin_lock_init(&sched_test_device_obj->job_lock);
-
-	ret = sched_test_hwemu_thread_start(sched_test_device_obj);
+	ret = sched_test_hwemu_thread_start(sched_test_device_obj, SCHED_TSTQ_A);
 	if (ret)
 		goto out_drm_unregister;
 
@@ -194,7 +192,7 @@ static void __exit sched_test_exit(void)
 {
 	struct platform_device *pdev = sched_test_device_obj->platform;
 
-	sched_test_hwemu_thread_stop(sched_test_device_obj);
+	sched_test_hwemu_thread_stop(sched_test_device_obj, SCHED_TSTQ_A);
 	kfree(sched_test_device_obj->hwemu);
 	drm_dev_unregister(&sched_test_device_obj->drm);
 	sched_test_sched_fini(sched_test_device_obj);
