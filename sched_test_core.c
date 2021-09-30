@@ -86,9 +86,6 @@ sched_test_job_free_lambda(struct kref *ref)
 	kfree(job);
 }
 
-DECLARE_WAIT_QUEUE_HEAD(wq);
-
-
 
 // structure describing the event to be processed
 struct event {
@@ -119,7 +116,7 @@ static void enqueue_next_event(struct event *e, struct sched_test_hwemu *arg)
 	spin_lock(&arg->events_lock);
 	list_add_tail(&e->lh, &arg->events_list);
 	spin_unlock(&arg->events_lock);
-	wake_up(&wq);
+	wake_up(&arg->wq);
 }
 
 
@@ -131,7 +128,7 @@ static int sched_test_thread(void *data)
 	while (!kthread_should_stop()) {
 		int ret = 0;
 		struct event *e = NULL;
-		wait_event_interruptible(wq, ((e = dequeue_next_event(arg)) ||
+		wait_event_interruptible(arg->wq, ((e = dequeue_next_event(arg)) ||
 					      kthread_should_stop()));
 		if (e->stop) {
 			drm_info(&arg->dev->drm, "HW breaking out of kthread loop");
@@ -143,7 +140,7 @@ static int sched_test_thread(void *data)
 	return 0;
 }
 
-int sched_test_hwemu_thread_start(struct sched_test_device *sdev, enum sched_test_queue qu)
+static int sched_test_hwemu_thread_start(struct sched_test_device *sdev, enum sched_test_queue qu)
 {
 	struct sched_test_hwemu *arg = kzalloc(sizeof(struct sched_test_hwemu), GFP_KERNEL);
 	int err = 0;
@@ -153,22 +150,22 @@ int sched_test_hwemu_thread_start(struct sched_test_device *sdev, enum sched_tes
 	sdev->hwemu[qu] = arg;
 
 	arg->dev = sdev;
-	arg->qu = SCHED_TSTQ_A;
+	arg->qu = qu;
 
+	init_waitqueue_head(&arg->wq);
 	spin_lock_init(&arg->events_lock);
 	spin_lock_init(&arg->job_lock);
-
 	INIT_LIST_HEAD(&arg->events_list);
 	arg->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_hw_queue_name(arg->qu));
 
+	drm_info(&sdev->drm, "Emulated HW thread start %s %p", sched_test_queue_name(qu), sdev->hwemu[qu]->hwemu_thread);
 	if(IS_ERR(arg->hwemu_thread)) {
 		drm_err(&sdev->drm, "create %s", sched_test_hw_queue_name(arg->qu));
 		err = PTR_ERR(arg->hwemu_thread);
 		arg->hwemu_thread = NULL;
 		goto out_free;
-		return err;
 	}
-	drm_info(&sdev->drm, "HW init %s", sched_test_queue_name(arg->qu));
+	drm_info(&sdev->drm, "Emulated HW queue %s", sched_test_queue_name(arg->qu));
 	return 0;
 out_free:
 	kfree(arg);
@@ -176,11 +173,12 @@ out_free:
 	return err;
 }
 
-int sched_test_hwemu_thread_stop(struct sched_test_device *sdev, enum sched_test_queue qu)
+static int sched_test_hwemu_thread_stop(struct sched_test_device *sdev, enum sched_test_queue qu)
 {
 	struct event *e;
 	int ret;
 
+	drm_info(&sdev->drm, "Emulated HW thread stop %s %p", sched_test_queue_name(qu), sdev->hwemu[qu]->hwemu_thread);
 	if (!sdev->hwemu[qu]->hwemu_thread)
 		return 0;
 
@@ -189,11 +187,31 @@ int sched_test_hwemu_thread_stop(struct sched_test_device *sdev, enum sched_test
 	enqueue_next_event(e, sdev->hwemu[qu]);
 	ret = kthread_stop(sdev->hwemu[qu]->hwemu_thread);
 	sdev->hwemu[qu]->hwemu_thread = NULL;
-
+	kfree(sdev->hwemu[qu]);
+	sdev->hwemu[qu] = NULL;
 	drm_info(&sdev->drm, "stop %s", sched_test_hw_queue_name(qu));
 	return ret;
 }
 
+int sched_test_hwemu_threads_start(struct sched_test_device *sdev)
+{
+	int result = sched_test_hwemu_thread_start(sdev, SCHED_TSTQ_A);
+	if (result)
+		return result;
+	result = sched_test_hwemu_thread_start(sdev, SCHED_TSTQ_B);
+	if (result)
+		sched_test_hwemu_thread_stop(sdev, SCHED_TSTQ_A);
+	return result;
+}
+
+int sched_test_hwemu_threads_stop(struct sched_test_device *sdev)
+{
+	enum sched_test_queue i;
+	for (i = SCHED_TSTQ_MAX; i > 0;) {
+		sched_test_hwemu_thread_stop(sdev, --i);
+	}
+	return 0;
+}
 
 int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv *priv)
 {

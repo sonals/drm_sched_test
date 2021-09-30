@@ -43,6 +43,7 @@ struct sched_test_hwemu {
 	spinlock_t events_lock;
 	/* Used for fence locking between scheduler and emulated HW thread */
 	spinlock_t job_lock;
+	wait_queue_head_t wq;
 	enum sched_test_queue qu;
 };
 
@@ -102,7 +103,7 @@ void sched_test_sched_fini(struct sched_test_device *sdev);
 int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv *priv);
 void sched_test_job_fini(struct sched_test_job *job);
 
-int sched_test_hwemu_thread_start(struct sched_test_device *sdev, enum sched_test_queue qu);
-int sched_test_hwemu_thread_stop(struct sched_test_device *sdev, enum sched_test_queue qu);
+int sched_test_hwemu_threads_start(struct sched_test_device *sdev);
+int sched_test_hwemu_threads_stop(struct sched_test_device *sdev);
 
 #endif
