@@ -62,13 +62,18 @@ void run(const char *nodeName, int count, bool release = true)
 	std::vector<drm_sched_test_submit> submitCmds(count);
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
-		submitCmds[i].fence = 0;
+		submitCmds[i].in.qu = SCHED_TSTQ_A;
 		ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
 	}
 
 	if (release) {
 		for (int i = 0; i < count; i++) {
-			drm_sched_test_wait wait = {submitCmds[i].fence, 100};
+			drm_sched_test_wait wait = {
+				.in = {
+					.fence = submitCmds[i].out.fence,
+					.timeout = 100
+				}
+			};
 			ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
 		}
 	}

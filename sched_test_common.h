@@ -17,14 +17,7 @@
 #include <drm/drm_drv.h>
 #include <drm/gpu_scheduler.h>
 
-
-#define SCHED_TEST_MAX_QUEUE 2
-
-enum sched_test_queue {
-	SCHED_TSTQ_A,
-	SCHED_TSTQ_B,
-	SCHED_TSTQ_MAX
-};
+#include "uapi/sched_test.h"
 
 struct sched_test_queue_state {
 	struct drm_gpu_scheduler sched;

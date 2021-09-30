@@ -63,9 +63,13 @@ void run(const char *nodeName, int count)
 
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
-		drm_sched_test_submit submit = {0};
+		drm_sched_test_submit submit = {
+			.in = {
+				.qu = SCHED_TSTQ_A
+			}
+		};
 		ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submit);
-		drm_sched_test_wait wait = {submit.fence, 100};
+		drm_sched_test_wait wait = {submit.out.fence, 100};
 		ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
 	}
 	auto end = std::chrono::high_resolution_clock::now();

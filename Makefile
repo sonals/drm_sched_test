@@ -34,10 +34,10 @@ all:
 	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules
 
 install: all
-	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules_install
-	depmod -a
-	-rmmod sched_test
-	-modprobe sched_test
+	sudo $(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules_install
+	sudo depmod -a
+	-sudo rmmod sched_test
+	-sudo modprobe sched_test
 
 clean:
 	rm -rf *.o *.o.d *~ core .depend .*.cmd *.ko *.ko.unsigned *.mod.c \

@@ -73,7 +73,7 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 			    struct drm_file *file_priv)
 {
 	struct sched_test_file_priv *priv = file_priv->driver_priv;
-	struct drm_sched_test_submit *args = data;
+	union drm_sched_test_submit *args = data;
 	struct sched_test_job *job;
 	int ret = 0;
 
@@ -81,22 +81,23 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 	if (!job)
 		return -ENOMEM;
 
+	job->qu = args->in.qu;
 	ret = idr_alloc(&priv->job_idr, job, 1, 0, GFP_KERNEL);
 	if (ret > 0)
-		args->fence = ret;
+		args->out.fence = ret;
 	else
 		goto out_free;
 
-	job->qu = SCHED_TSTQ_A;
 	ret = sched_test_job_init(job, priv);
 	if (ret)
 		goto out_idr;
 	return 0;
 
 out_idr:
-	idr_remove(&priv->job_idr, args->fence);
+	idr_remove(&priv->job_idr, args->out.fence);
 out_free:
 	kfree(job);
+	args->out.fence = 0xffffffff;
 	return ret;
 }
 
@@ -104,16 +105,17 @@ int sched_test_wait_ioctl(struct drm_device *dev, void *data,
 			  struct drm_file *file_priv)
 {
 	struct sched_test_file_priv *priv = file_priv->driver_priv;
-	struct drm_sched_test_wait *args = data;
-	struct sched_test_job *job = idr_find(&priv->job_idr, args->fence);
+	union drm_sched_test_wait *args = data;
+	struct sched_test_job *job = idr_find(&priv->job_idr, args->in.fence);
 	signed long int left = 0;
 
 	if (!job)
 		return -EINVAL;
-	left = dma_fence_wait_timeout(job->done_fence, true, args->timeout);
+	left = dma_fence_wait_timeout(job->done_fence, true, args->in.timeout);
 	if (left > 0) {
-		idr_remove(&priv->job_idr, args->fence);
+		idr_remove(&priv->job_idr, args->in.fence);
 		sched_test_job_fini(job);
+		args->out.timeout = left;
 		return 0;
 	}
 	if (left < 0)

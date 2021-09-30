@@ -18,20 +18,44 @@
 extern "C" {
 #endif
 
+enum sched_test_queue {
+	SCHED_TSTQ_A,
+	SCHED_TSTQ_B,
+	SCHED_TSTQ_MAX
+};
+
 #define DRM_SCHED_TEST_SUBMIT                     0x00
 #define DRM_SCHED_TEST_WAIT                       0x01
 
-struct drm_sched_test_submit {
-	int fence; /* out */
+struct drm_sched_test_submit_in {
+	enum sched_test_queue qu;
 };
 
-struct drm_sched_test_wait {
-	int fence; /* in */
+struct drm_sched_test_submit_out {
+	int fence;
+};
+
+union drm_sched_test_submit {
+	struct drm_sched_test_submit_in in;
+	struct drm_sched_test_submit_out out;
+};
+
+struct drm_sched_test_wait_in {
+	int fence;
 	signed long timeout;
 };
 
-#define DRM_IOCTL_SCHED_TEST_SUBMIT           DRM_IOWR(DRM_COMMAND_BASE + DRM_SCHED_TEST_SUBMIT, struct drm_sched_test_submit)
-#define DRM_IOCTL_SCHED_TEST_WAIT             DRM_IOWR(DRM_COMMAND_BASE + DRM_SCHED_TEST_WAIT, struct drm_sched_test_wait)
+struct drm_sched_test_wait_out {
+	signed long timeout;
+};
+
+union drm_sched_test_wait {
+	struct drm_sched_test_wait_in in;
+	struct drm_sched_test_wait_out out;
+};
+
+#define DRM_IOCTL_SCHED_TEST_SUBMIT           DRM_IOWR(DRM_COMMAND_BASE + DRM_SCHED_TEST_SUBMIT, union drm_sched_test_submit)
+#define DRM_IOCTL_SCHED_TEST_WAIT             DRM_IOWR(DRM_COMMAND_BASE + DRM_SCHED_TEST_WAIT, union drm_sched_test_wait)
 
 
 #if defined(__cplusplus)
