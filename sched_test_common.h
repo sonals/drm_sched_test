@@ -58,6 +58,8 @@ struct sched_test_job {
 	struct drm_sched_job base;
 	struct kref refcount;
 	struct sched_test_device *sdev;
+	/* The done fence (if any) of another job this job is dependent on */
+	struct dma_fence *in_fence;
 	/* Reference to the 'finished' fence owned by the drm_sched_job */
 	struct dma_fence *done_fence;
 	/* Fence created by the driver and used between scheduler and emulated HW thread */

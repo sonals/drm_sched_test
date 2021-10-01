@@ -28,6 +28,7 @@ enum sched_test_queue {
 #define DRM_SCHED_TEST_WAIT                       0x01
 
 struct drm_sched_test_submit_in {
+	int in_fence;
 	enum sched_test_queue qu;
 };
 

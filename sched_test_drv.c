@@ -74,8 +74,15 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 {
 	struct sched_test_file_priv *priv = file_priv->driver_priv;
 	union drm_sched_test_submit *args = data;
+	struct sched_test_job *in_job = NULL;
+	struct dma_fence *in_fence = NULL;
 	struct sched_test_job *job;
 	int ret = 0;
+
+	if (args->in.in_fence) {
+		in_job = idr_find(&priv->job_idr, args->in.in_fence);
+		in_fence = in_job ? in_job->done_fence : NULL;
+	}
 
 	job = kzalloc(sizeof(*job), GFP_KERNEL);
 	if (!job)
@@ -91,6 +98,7 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 	ret = sched_test_job_init(job, priv);
 	if (ret)
 		goto out_idr;
+	job->in_fence = in_fence ? dma_fence_get(in_fence) : NULL;
 	return 0;
 
 out_idr:

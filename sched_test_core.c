@@ -231,6 +231,7 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 
 void sched_test_job_fini(struct sched_test_job *job)
 {
+	dma_fence_put(job->in_fence);
 	dma_fence_put(job->done_fence);
 	kref_put(&job->refcount, job->free);
 }
@@ -239,7 +240,8 @@ void sched_test_job_fini(struct sched_test_job *job)
 static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_job,
 						   struct drm_sched_entity *sched_entity)
 {
-	return NULL;
+	struct sched_test_job *job = to_sched_test_job(sched_job);
+	return job->in_fence;
 }
 
 
