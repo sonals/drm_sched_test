@@ -60,12 +60,17 @@ static int job_idr_fini(int id, void *p, void *data)
 static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 {
 	struct sched_test_file_priv *priv = file->driver_priv;
+	const bool outstanding = idr_is_empty(&priv->job_idr);
+	drm_info(dev, "File closing...");
+	if (!outstanding)
+		drm_info(dev, "Reap outstanding jobs...");
+	else
+		drm_info(dev, "No outstanding jobs...");
 	drm_sched_entity_destroy(&priv->entity);
-	drm_info(dev, "Application exiting, harvesting all remaining jobs...");
 	idr_for_each(&priv->job_idr, job_idr_fini, priv);
 	idr_destroy(&priv->job_idr);
 	kfree(priv);
-	drm_info(dev, "Application exiting");
+	drm_info(dev, "File closed");
 	file->driver_priv = NULL;
 }
 
@@ -98,7 +103,7 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 	ret = sched_test_job_init(job, priv);
 	if (ret)
 		goto out_idr;
-	job->in_fence = in_fence ? dma_fence_get(in_fence) : NULL;
+	job->in_fence = dma_fence_get(in_fence);
 	return 0;
 
 out_idr:

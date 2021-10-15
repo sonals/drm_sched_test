@@ -63,6 +63,7 @@ void run(const char *nodeName, int count, bool release = true)
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
 		sched_test_queue qu = (i & 0x1) ? SCHED_TSTQ_B : SCHED_TSTQ_A;
+//		sched_test_queue qu = SCHED_TSTQ_A;
 		submitCmds[i].in.qu = qu;
 		submitCmds[i].in.in_fence = 0;
 		ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
@@ -112,9 +113,9 @@ int main(int argc, char *argv[])
 			throw std::invalid_argument("");
 		}
 
-		std::cout << "Start auto job cleanup test..." << std::endl;
-		run(nodeName, count, false);
-		std::cout << "Finished auto job cleanup test" << std::endl;
+//		std::cout << "Start auto job cleanup test..." << std::endl;
+//		run(nodeName, count, false);
+//		std::cout << "Finished auto job cleanup test" << std::endl;
 		std::cout << "Start regular job test..." << std::endl;
 		run(nodeName, count);
 		std::cout << "Finished regular job test..." << std::endl;

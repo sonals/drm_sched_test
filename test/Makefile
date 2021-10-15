@@ -25,5 +25,8 @@ clean:
 	$(RM) -f test1.o test2.o test1 test2
 
 run: all
+ifeq ($(verbose), 1)
+	sudo bash -c "echo 0x2 > /sys/module/drm/parameters/debug"
+endif
 	./test1 -c 10000
 	./test2 -c 10000

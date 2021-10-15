@@ -58,9 +58,18 @@ static const char *sched_test_fence_get_timeline_name(struct dma_fence *fence)
 	return sched_test_queue_name(f->qu);
 }
 
+void sched_test_fence_release(struct dma_fence *fence)
+{
+	struct sched_test_fence *sfence = to_sched_test_fence(fence);
+	//drm_info(&sfence->sdev->drm, "Freeing fence object %p", sfence);
+	dma_fence_free(fence);
+}
+
+
 const struct dma_fence_ops sched_test_fence_ops = {
 	.get_driver_name = sched_test_fence_get_driver_name,
 	.get_timeline_name = sched_test_fence_get_timeline_name,
+	.release = sched_test_fence_release,
 };
 
 struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev, enum sched_test_queue qu)
@@ -83,11 +92,11 @@ sched_test_job_free_lambda(struct kref *ref)
 {
 	struct sched_test_job *job = container_of(ref, struct sched_test_job,
 						  refcount);
+	DRM_DEBUG_DRIVER("Freeing job object %p", job);
+//	drm_info(&job->sdev->drm, "Freeing job object %p", job);
 	kfree(job);
 }
 
-
-// structure describing the event to be processed
 struct event {
 	struct list_head lh;
 	struct sched_test_job *job;
@@ -220,20 +229,31 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	if (err)
 		return err;
 
+	/* kref_init will add a reference to this job */
 	kref_init(&job->refcount);
 	job->free = sched_test_job_free_lambda;
 	job->sdev = priv->sdev;
+//	int count = kref_read(&job->base.s_fence->finished.refcount);
+//	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, &job->base.s_fence->finished, count);
 	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
+	int count = kref_read(&job->done_fence->refcount);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
 	drm_sched_entity_push_job(&job->base, &priv->entity);
-
 	return err;
 }
 
 void sched_test_job_fini(struct sched_test_job *job)
 {
+//	int count = kref_read(&job->in_fence->refcount);
+//	drm_info(&job->sdev->drm, "in_fence %p refcount %d", job, count);
+
 	dma_fence_put(job->in_fence);
+	DRM_DEBUG_DRIVER("job %p entity->last_scheduled %p", job, job->base.entity->last_scheduled);
+	int count = kref_read(&job->done_fence->refcount);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
 	dma_fence_put(job->done_fence);
 	kref_put(&job->refcount, job->free);
+
 }
 
 
@@ -241,6 +261,8 @@ static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_j
 						   struct drm_sched_entity *sched_entity)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
+//	int count = kref_read(&job->done_fence->refcount);
+//	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
 	return job->in_fence;
 }
 
@@ -257,6 +279,7 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	e = kzalloc(sizeof(struct event), GFP_KERNEL);
 	if (!e)
 		return NULL;
+	/* Creates the fence and also adds a reference */
 	fence = sched_test_fence_create(job->sdev, job->qu);
 	if (IS_ERR(fence))
 		goto out_free;
@@ -266,6 +289,8 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	e->stop = false;
 	kref_get(&job->refcount);
 	enqueue_next_event(e, job->sdev->hwemu[job->qu]);
+	int count = kref_read(&job->done_fence->refcount);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
 	return job->irq_fence;
 
 out_free:
@@ -282,9 +307,21 @@ static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sch
 static void sched_test_job_free(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
+	DRM_DEBUG_DRIVER("ENTER JOB %p", job);
+//	int count = kref_read(&job->irq_fence->refcount);
+//	DRM_DEBUG_DRIVER("job %p irq_fence %p refcount %d", job, job->irq_fence, count);
+	/* Done with the irq_fence, release it */
 	dma_fence_put(job->irq_fence);
+	job->irq_fence = NULL;
+	DRM_DEBUG_DRIVER("job %p entity->last_scheduled %p", job, job->base.entity->last_scheduled);
+	DRM_DEBUG_DRIVER("job %p done_fence %p", job, job->done_fence);
+	int count = kref_read(&job->done_fence->refcount);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
 	drm_sched_job_cleanup(sched_job);
+//	count = kref_read(&job->done_fence->refcount);
+//	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
 	kref_put(&job->refcount, job->free);
+	DRM_DEBUG_DRIVER("EXIT JOB %p", job);
 }
 
 static const struct drm_sched_backend_ops sched_test_regular_ops = {
