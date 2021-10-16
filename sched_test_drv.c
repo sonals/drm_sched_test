@@ -43,6 +43,7 @@ static int sched_test_open(struct drm_device *dev, struct drm_file *file)
 		goto out;
 	idr_init_base(&priv->job_idr, 1);
 	file->driver_priv = priv;
+	drm_info(dev, "File opened...");
 	return 0;
 
 out:
@@ -70,7 +71,7 @@ static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 	idr_for_each(&priv->job_idr, job_idr_fini, priv);
 	idr_destroy(&priv->job_idr);
 	kfree(priv);
-	drm_info(dev, "File closed");
+	drm_info(dev, "File closed!");
 	file->driver_priv = NULL;
 }
 
