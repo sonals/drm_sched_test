@@ -58,10 +58,18 @@ static const char *sched_test_fence_get_timeline_name(struct dma_fence *fence)
 	return sched_test_queue_name(f->qu);
 }
 
+/*
+ * The IRQ fence is released either by
+ * 1. drm_sched_entity_fini() as part of  entity tear down when device handle is
+ *    closed or by the application
+ * 2. sched_test_job_fini() which is called when the application finishes wait on
+ *    a submitted job
+ */
 void sched_test_fence_release(struct dma_fence *fence)
 {
 	struct sched_test_fence *sfence = to_sched_test_fence(fence);
 	//drm_info(&sfence->sdev->drm, "Freeing fence object %p", sfence);
+	//dump_stack();
 	dma_fence_free(fence);
 }
 
@@ -72,6 +80,9 @@ const struct dma_fence_ops sched_test_fence_ops = {
 	.release = sched_test_fence_release,
 };
 
+/*
+ * Custom routine for IRQ fence creation
+ */
 struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev, enum sched_test_queue qu)
 {
 	struct sched_test_fence *fence = kzalloc(sizeof(*fence), GFP_KERNEL);
@@ -104,6 +115,9 @@ struct event {
 	int seq;
 };
 
+/*
+ * Called by the HW emulation thread to process the next job in the queue
+ */
 static struct event *dequeue_next_event(struct sched_test_hwemu *arg)
 {
     struct event *e = NULL;
@@ -118,6 +132,9 @@ static struct event *dequeue_next_event(struct sched_test_hwemu *arg)
     return e;
 }
 
+/*
+ * Called by the scheduler thread to add the next job to the queue
+ */
 static void enqueue_next_event(struct event *e, struct sched_test_hwemu *arg)
 {
 	static int seq = 0;
@@ -128,7 +145,9 @@ static void enqueue_next_event(struct event *e, struct sched_test_hwemu *arg)
 	wake_up(&arg->wq);
 }
 
-
+/*
+ * Core of teh HW emulation thread
+ */
 static int sched_test_thread(void *data)
 {
 	int i = 0;
@@ -138,7 +157,7 @@ static int sched_test_thread(void *data)
 		int ret = 0;
 		struct event *e = NULL;
 		wait_event_interruptible(arg->wq, ((e = dequeue_next_event(arg)) ||
-					      kthread_should_stop()));
+						   kthread_should_stop()));
 		if (e->stop) {
 			drm_info(&arg->dev->drm, "HW breaking out of kthread loop");
 			break;
@@ -148,6 +167,7 @@ static int sched_test_thread(void *data)
 	}
 	return 0;
 }
+
 
 static int sched_test_hwemu_thread_start(struct sched_test_device *sdev, enum sched_test_queue qu)
 {

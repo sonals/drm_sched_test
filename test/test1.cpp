@@ -113,9 +113,9 @@ int main(int argc, char *argv[])
 			throw std::invalid_argument("");
 		}
 
-//		std::cout << "Start auto job cleanup test..." << std::endl;
-//		run(nodeName, count, false);
-//		std::cout << "Finished auto job cleanup test" << std::endl;
+		std::cout << "Start auto job cleanup test..." << std::endl;
+		run(nodeName, count, false);
+		std::cout << "Finished auto job cleanup test" << std::endl;
 		std::cout << "Start regular job test..." << std::endl;
 		run(nodeName, count);
 		std::cout << "Finished regular job test..." << std::endl;
