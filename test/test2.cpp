@@ -24,8 +24,6 @@
 
 #include "sched_test.h"
 
-// g++ -I ../uapi/ test2.cpp
-
 static const int LEN = 128;
 
 void run(const char *nodeName, int count)

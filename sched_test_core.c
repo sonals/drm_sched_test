@@ -68,7 +68,7 @@ static const char *sched_test_fence_get_timeline_name(struct dma_fence *fence)
 void sched_test_fence_release(struct dma_fence *fence)
 {
 	struct sched_test_fence *sfence = to_sched_test_fence(fence);
-	//drm_info(&sfence->sdev->drm, "Freeing fence object %p", sfence);
+	DRM_DEBUG_DRIVER("Freeing fence object %p", sfence);
 	//dump_stack();
 	dma_fence_free(fence);
 }
@@ -98,20 +98,24 @@ struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev, enum s
 	return &fence->base;
 }
 
-static void
-sched_test_job_free_lambda(struct kref *ref)
+static void sched_test_job_free_lambda(struct kref *ref)
 {
 	struct sched_test_job *job = container_of(ref, struct sched_test_job,
 						  refcount);
 	DRM_DEBUG_DRIVER("Freeing job object %p", job);
-//	drm_info(&job->sdev->drm, "Freeing job object %p", job);
 	kfree(job);
 }
 
+/*
+ * HW emulation model uses a queue of event objects
+ */
 struct event {
 	struct list_head lh;
+	/* Job object added by the scheduler */
 	struct sched_test_job *job;
+	/* Used to signal termination of HW emulation thread */
 	bool stop;
+	/* Currently unused */
 	int seq;
 };
 
@@ -150,7 +154,6 @@ static void enqueue_next_event(struct event *e, struct sched_test_hwemu *arg)
  */
 static int sched_test_thread(void *data)
 {
-	int i = 0;
 	struct sched_test_hwemu *arg = data;
 
 	while (!kthread_should_stop()) {
@@ -163,7 +166,7 @@ static int sched_test_thread(void *data)
 			break;
 		}
 		ret = dma_fence_signal(e->job->irq_fence);
-		i++;
+		arg->count++;
 	}
 	return 0;
 }
@@ -187,14 +190,15 @@ static int sched_test_hwemu_thread_start(struct sched_test_device *sdev, enum sc
 	INIT_LIST_HEAD(&arg->events_list);
 	arg->hwemu_thread = kthread_run(sched_test_thread, arg, sched_test_hw_queue_name(arg->qu));
 
-	drm_info(&sdev->drm, "Emulated HW thread start %s %p", sched_test_queue_name(qu), sdev->hwemu[qu]->hwemu_thread);
+	drm_info(&sdev->drm, "HW emulation thread start %s %p", sched_test_queue_name(qu),
+		 sdev->hwemu[qu]->hwemu_thread);
 	if(IS_ERR(arg->hwemu_thread)) {
 		drm_err(&sdev->drm, "create %s", sched_test_hw_queue_name(arg->qu));
 		err = PTR_ERR(arg->hwemu_thread);
 		arg->hwemu_thread = NULL;
 		goto out_free;
 	}
-	drm_info(&sdev->drm, "Emulated HW queue %s", sched_test_queue_name(arg->qu));
+	drm_info(&sdev->drm, "HW emulation queue %s", sched_test_queue_name(arg->qu));
 	return 0;
 out_free:
 	kfree(arg);
@@ -207,7 +211,8 @@ static int sched_test_hwemu_thread_stop(struct sched_test_device *sdev, enum sch
 	struct event *e;
 	int ret;
 
-	drm_info(&sdev->drm, "Emulated HW thread stop %s %p", sched_test_queue_name(qu), sdev->hwemu[qu]->hwemu_thread);
+	drm_info(&sdev->drm, "HW emulation thread stop request %s %p", sched_test_queue_name(qu),
+		 sdev->hwemu[qu]->hwemu_thread);
 	if (!sdev->hwemu[qu]->hwemu_thread)
 		return 0;
 
@@ -216,9 +221,10 @@ static int sched_test_hwemu_thread_stop(struct sched_test_device *sdev, enum sch
 	enqueue_next_event(e, sdev->hwemu[qu]);
 	ret = kthread_stop(sdev->hwemu[qu]->hwemu_thread);
 	sdev->hwemu[qu]->hwemu_thread = NULL;
+	drm_info(&sdev->drm, "HW emulation thread %s stopped, processed %ld jobs", sched_test_hw_queue_name(qu),
+		 sdev->hwemu[qu]->count);
 	kfree(sdev->hwemu[qu]);
 	sdev->hwemu[qu] = NULL;
-	drm_info(&sdev->drm, "stop %s", sched_test_hw_queue_name(qu));
 	return ret;
 }
 
@@ -253,11 +259,11 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	kref_init(&job->refcount);
 	job->free = sched_test_job_free_lambda;
 	job->sdev = priv->sdev;
-//	int count = kref_read(&job->base.s_fence->finished.refcount);
-//	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, &job->base.s_fence->finished, count);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, &job->base.s_fence->finished,
+			 kref_read(&job->base.s_fence->finished.refcount));
 	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
-	int count = kref_read(&job->done_fence->refcount);
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
+			 kref_read(&job->done_fence->refcount));
 	drm_sched_entity_push_job(&job->base, &priv->entity);
 	return err;
 }
@@ -269,8 +275,8 @@ void sched_test_job_fini(struct sched_test_job *job)
 
 	dma_fence_put(job->in_fence);
 	DRM_DEBUG_DRIVER("job %p entity->last_scheduled %p", job, job->base.entity->last_scheduled);
-	int count = kref_read(&job->done_fence->refcount);
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
+			 kref_read(&job->done_fence->refcount));
 	dma_fence_put(job->done_fence);
 	kref_put(&job->refcount, job->free);
 
@@ -281,8 +287,8 @@ static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_j
 						   struct drm_sched_entity *sched_entity)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
-//	int count = kref_read(&job->done_fence->refcount);
-//	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
+			 kref_read(&job->done_fence->refcount));
 	return job->in_fence;
 }
 
@@ -290,7 +296,7 @@ static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_j
 static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
-	struct dma_fence *fence = NULL;
+	struct dma_fence *irq_fence = NULL;
 	struct event *e = NULL;
 
 	if (unlikely(job->base.s_fence->finished.error))
@@ -300,17 +306,17 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	if (!e)
 		return NULL;
 	/* Creates the fence and also adds a reference */
-	fence = sched_test_fence_create(job->sdev, job->qu);
-	if (IS_ERR(fence))
+	irq_fence = sched_test_fence_create(job->sdev, job->qu);
+	if (IS_ERR(irq_fence))
 		goto out_free;
 
-	job->irq_fence = dma_fence_get(fence);
+	job->irq_fence = dma_fence_get(irq_fence);
 	e->job = job;
 	e->stop = false;
 	kref_get(&job->refcount);
 	enqueue_next_event(e, job->sdev->hwemu[job->qu]);
-	int count = kref_read(&job->done_fence->refcount);
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
+			 kref_read(&job->done_fence->refcount));
 	return job->irq_fence;
 
 out_free:
@@ -327,21 +333,20 @@ static enum drm_gpu_sched_stat sched_test_job_timedout(struct drm_sched_job *sch
 static void sched_test_job_free(struct drm_sched_job *sched_job)
 {
 	struct sched_test_job *job = to_sched_test_job(sched_job);
-	DRM_DEBUG_DRIVER("ENTER JOB %p", job);
-//	int count = kref_read(&job->irq_fence->refcount);
-//	DRM_DEBUG_DRIVER("job %p irq_fence %p refcount %d", job, job->irq_fence, count);
+
+	DRM_DEBUG_DRIVER("job %p irq_fence %p refcount %d", job, job->irq_fence,
+			 kref_read(&job->irq_fence->refcount));
 	/* Done with the irq_fence, release it */
 	dma_fence_put(job->irq_fence);
 	job->irq_fence = NULL;
 	DRM_DEBUG_DRIVER("job %p entity->last_scheduled %p", job, job->base.entity->last_scheduled);
 	DRM_DEBUG_DRIVER("job %p done_fence %p", job, job->done_fence);
-	int count = kref_read(&job->done_fence->refcount);
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
+			 kref_read(&job->done_fence->refcount));
 	drm_sched_job_cleanup(sched_job);
-//	count = kref_read(&job->done_fence->refcount);
-//	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence, count);
+	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
+			 kref_read(&job->done_fence->refcount));
 	kref_put(&job->refcount, job->free);
-	DRM_DEBUG_DRIVER("EXIT JOB %p", job);
 }
 
 static const struct drm_sched_backend_ops sched_test_regular_ops = {

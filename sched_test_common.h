@@ -30,13 +30,16 @@ struct sched_test_hwemu {
 	struct sched_test_device *dev;
 	/* Kernel thread emulating HW and processing jobs submitted by scheduler */
 	struct task_struct *hwemu_thread;
-	/* List of jobs to be processed by the kernel thread */
+	/* List of jobs to be processed by the kernel thread -- queue for the HW emulation thread */
 	struct list_head events_list;
 	/* Used to protect the job (events_list) queue */
 	spinlock_t events_lock;
-	/* Used for fence locking between scheduler and emulated HW thread */
+	/* Used for irq_fence locking between scheduler and HW emulation thread */
 	spinlock_t job_lock;
+	/* Count of jobs processed */
+	unsigned long count;
 	wait_queue_head_t wq;
+
 	enum sched_test_queue qu;
 };
 
@@ -48,9 +51,11 @@ struct sched_test_device {
 	struct sched_test_hwemu *hwemu[SCHED_TSTQ_MAX];
 };
 
+/* File private data structure */
 struct sched_test_file_priv {
 	struct sched_test_device *sdev;
 	struct drm_sched_entity entity;
+	/* Job objects submitted by application are tracked by this container */
 	struct idr job_idr;
 };
 
@@ -70,6 +75,7 @@ struct sched_test_job {
 	void (*free)(struct kref *ref);
 };
 
+/* Models the IRQ fence */
 struct sched_test_fence {
 	struct dma_fence base;
 	struct sched_test_device *sdev;
