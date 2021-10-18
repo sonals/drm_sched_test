@@ -154,7 +154,7 @@ static void enqueue_next_event(struct event *e, struct sched_test_hwemu *arg)
 }
 
 /*
- * Core of teh HW emulation thread
+ * Core loop of the HW emulation thread
  */
 static int sched_test_thread(void *data)
 {
@@ -265,7 +265,10 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	job->sdev = priv->sdev;
 	DRM_INFO("job %p done_fence %p refcount %d -- A", job, &job->base.s_fence->finished,
 		 kref_read(&job->base.s_fence->finished.refcount));
-	/* Obtain our reference to scheduler's job done fence */
+	/*
+	 * Obtain our reference to scheduler's job done fence, we will wait on it later
+	 * if/when the client process waits for the job completion
+	 */
 	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
 	DRM_INFO("job %p done_fence %p refcount %d -- B", job, job->done_fence,
 		 kref_read(&job->done_fence->refcount));
@@ -350,8 +353,6 @@ static void sched_test_job_free(struct drm_sched_job *sched_job)
 	DRM_INFO("job %p done_fence %p refcount %d -- E", job, job->done_fence,
 		 kref_read(&job->done_fence->refcount));
 	drm_sched_job_cleanup(sched_job);
-	DRM_INFO("job %p done_fence %p refcount %d -- F", job, job->done_fence,
-		 kref_read(&job->done_fence->refcount));
 	kref_put(&job->refcount, job->free);
 }
 
