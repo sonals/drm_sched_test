@@ -11,7 +11,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
-
+#include <spawn.h>
 
 #include <iostream>
 #include <cerrno>
@@ -63,7 +63,6 @@ void run(const char *nodeName, int count, bool release = true)
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
 		sched_test_queue qu = (i & 0x1) ? SCHED_TSTQ_B : SCHED_TSTQ_A;
-//		sched_test_queue qu = SCHED_TSTQ_A;
 		submitCmds[i].in.qu = qu;
 		submitCmds[i].in.in_fence = 0;
 		ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
@@ -88,13 +87,30 @@ void run(const char *nodeName, int count, bool release = true)
 	close(fd);
 }
 
+static void usage(const char *cmd)
+{
+	std::cout << "Usage " << cmd << " [-n <dev_node>] [-c <loop_count>] [-j <jobs>]\n";
+	throw std::invalid_argument("");
+}
+
+static void runall(const char *nodeName, int count)
+{
+	std::cout << "Start auto job cleanup test..." << std::endl;
+	run(nodeName, count, false);
+	std::cout << "Finished auto job cleanup test" << std::endl;
+	std::cout << "Start regular job test..." << std::endl;
+	run(nodeName, count);
+	std::cout << "Finished regular job test..." << std::endl;
+}
+
 int main(int argc, char *argv[])
 {
 	static const char *nodeName = "/dev/dri/renderD128";
 	try {
+		int jobs = 1;
 		int count = 100;
 		char c = '\0';
-		while ((c = getopt (argc, argv, "n:c:")) != -1) {
+		while ((c = getopt (argc, argv, "n:c:j:")) != -1) {
 			switch (c) {
 			case 'n':
 				nodeName = optarg;
@@ -102,26 +118,47 @@ int main(int argc, char *argv[])
 			case 'c':
 				count = std::atoi(optarg);
 				break;
+			case 'j':
+				jobs = std::atoi(optarg);
+				break;
 			case '?':
 			default:
-				std::cout << "Usage " << argv[0] << " [-n <dev_node>] [-c <loop_count>]\n";
-				throw std::invalid_argument("");
+				usage(argv[0]);
 			}
 		}
 		if (optind < argc) {
-			std::cout << "Usage " << argv[0] << " [-n <dev_node>] [-c <loop_count>]\n";
-			throw std::invalid_argument("");
+			usage(argv[0]);
 		}
 
-		std::cout << "Start auto job cleanup test..." << std::endl;
-		run(nodeName, count, false);
-		std::cout << "Finished auto job cleanup test" << std::endl;
-		std::cout << "Start regular job test..." << std::endl;
-		run(nodeName, count);
-		std::cout << "Finished regular job test..." << std::endl;
+		if (jobs == 1) {
+			runall(nodeName, count);
+		}
+		else {
+			const std::string cstr(std::to_string(count));
+			posix_spawn_file_actions_t file_actions;
+			int result = posix_spawn_file_actions_init(&file_actions);
+			if (result)
+				throw std::system_error(result, std::generic_category(), argv[0]);
+
+			result = posix_spawn_file_actions_addclose(&file_actions,
+								   STDIN_FILENO);
+			if (result)
+				throw std::system_error(result, std::generic_category(), argv[0]);
+
+			char * const cargv[6] = {strdup(argv[0]), strdup("-n"), strdup(nodeName), strdup("-c"), strdup(cstr.c_str()), 0};
+			for (int i = 1; i <= jobs; i++) {
+				pid_t pid;
+				result = posix_spawn(&pid, argv[0], &file_actions, 0, cargv, 0);
+				if (result)
+					throw std::system_error(result, std::generic_category(), argv[0]);
+				std::cout << "Child process[" << i << "]: " << pid << std::endl;
+			}
+		}
+
 	} catch (std::exception &ex) {
 		std::cout << ex.what() << std::endl;
 		return 1;
 	}
+	std::cout << std::endl;
 	return 0;
 }

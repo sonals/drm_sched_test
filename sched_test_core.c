@@ -60,10 +60,14 @@ static const char *sched_test_fence_get_timeline_name(struct dma_fence *fence)
 
 /*
  * The IRQ fence is released either by
- * 1. drm_sched_entity_fini() as part of  entity tear down when device handle is
- *    closed or by the application
- * 2. sched_test_job_fini() which is called when the application finishes wait on
- *    a submitted job
+ * 1.  drm_sched_entity_fini() as part of entity tear down an application attempts
+ *     to close device handle after finishing wait on all the submitted jobs, the last
+ *     irq fence is released this way
+ *     closed or by the application
+ * 2.  sched_test_job_fini() which is called
+ * 2.1 when the application finishes wait on a submitted job
+ * 2.2 when the application attempts to close the device handle without calling
+ *     wait on submitted jobs, sched_test_postclose does the cleanup
  */
 void sched_test_fence_release(struct dma_fence *fence)
 {
@@ -259,11 +263,12 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	kref_init(&job->refcount);
 	job->free = sched_test_job_free_lambda;
 	job->sdev = priv->sdev;
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, &job->base.s_fence->finished,
-			 kref_read(&job->base.s_fence->finished.refcount));
+	DRM_INFO("job %p done_fence %p refcount %d -- A", job, &job->base.s_fence->finished,
+		 kref_read(&job->base.s_fence->finished.refcount));
+	/* Obtain our reference to scheduler's job done fence */
 	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
-			 kref_read(&job->done_fence->refcount));
+	DRM_INFO("job %p done_fence %p refcount %d -- B", job, job->done_fence,
+		 kref_read(&job->done_fence->refcount));
 	drm_sched_entity_push_job(&job->base, &priv->entity);
 	return err;
 }
@@ -275,8 +280,8 @@ void sched_test_job_fini(struct sched_test_job *job)
 
 	dma_fence_put(job->in_fence);
 	DRM_DEBUG_DRIVER("job %p entity->last_scheduled %p", job, job->base.entity->last_scheduled);
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
-			 kref_read(&job->done_fence->refcount));
+	DRM_INFO("job %p done_fence %p refcount %d -- C", job, job->done_fence,
+		 kref_read(&job->done_fence->refcount));
 	dma_fence_put(job->done_fence);
 	kref_put(&job->refcount, job->free);
 
@@ -305,18 +310,19 @@ static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 	e = kzalloc(sizeof(struct event), GFP_KERNEL);
 	if (!e)
 		return NULL;
-	/* Creates the fence and also adds a reference */
+	/* Creates the fence and also adds a reference for our use */
 	irq_fence = sched_test_fence_create(job->sdev, job->qu);
 	if (IS_ERR(irq_fence))
 		goto out_free;
 
+	/* Get another reference for the scheduler thread */
 	job->irq_fence = dma_fence_get(irq_fence);
 	e->job = job;
 	e->stop = false;
 	kref_get(&job->refcount);
 	enqueue_next_event(e, job->sdev->hwemu[job->qu]);
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
-			 kref_read(&job->done_fence->refcount));
+	DRM_INFO("job %p done_fence %p refcount %d -- D", job, job->done_fence,
+		 kref_read(&job->done_fence->refcount));
 	return job->irq_fence;
 
 out_free:
@@ -341,11 +347,11 @@ static void sched_test_job_free(struct drm_sched_job *sched_job)
 	job->irq_fence = NULL;
 	DRM_DEBUG_DRIVER("job %p entity->last_scheduled %p", job, job->base.entity->last_scheduled);
 	DRM_DEBUG_DRIVER("job %p done_fence %p", job, job->done_fence);
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
-			 kref_read(&job->done_fence->refcount));
+	DRM_INFO("job %p done_fence %p refcount %d -- E", job, job->done_fence,
+		 kref_read(&job->done_fence->refcount));
 	drm_sched_job_cleanup(sched_job);
-	DRM_DEBUG_DRIVER("job %p done_fence %p refcount %d", job, job->done_fence,
-			 kref_read(&job->done_fence->refcount));
+	DRM_INFO("job %p done_fence %p refcount %d -- F", job, job->done_fence,
+		 kref_read(&job->done_fence->refcount));
 	kref_put(&job->refcount, job->free);
 }
 

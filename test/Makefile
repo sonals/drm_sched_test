@@ -30,3 +30,4 @@ ifeq ($(verbose), 1)
 endif
 	./test1 -c 10000
 	./test2 -c 10000
+	./test1 -c 10000 -j 2
