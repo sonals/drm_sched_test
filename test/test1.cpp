@@ -26,9 +26,9 @@
 
 static const int LEN = 128;
 
-void run(const char *nodeName, int count, bool release = true)
+void run(const std::string &nodeName, int count, bool release = true)
 {
-	int fd = open(nodeName, O_RDWR);
+	int fd = open(nodeName.c_str(), O_RDWR);
 
 	if (fd < 0)
 		throw std::system_error(errno, std::generic_category(), nodeName);
@@ -93,7 +93,7 @@ static void usage(const char *cmd)
 	throw std::invalid_argument("");
 }
 
-static void runall(const char *nodeName, int count)
+static void runAll(const std::string &nodeName, int count)
 {
 	std::cout << "Start auto job cleanup test..." << std::endl;
 	run(nodeName, count, false);
@@ -103,10 +103,36 @@ static void runall(const char *nodeName, int count)
 	std::cout << "Finished regular job test..." << std::endl;
 }
 
+static void runJobs(const std::string &nodeName, int count, int jobs, const std::string &cmd)
+{
+	auto checkLambda = [cmd](int result) {
+				   if (result)
+					   throw std::system_error(result, std::generic_category(), cmd);
+			   };
+
+	const std::string cstr(std::to_string(count));
+	posix_spawn_file_actions_t file_actions;
+	int result = posix_spawn_file_actions_init(&file_actions);
+	checkLambda(result);
+
+	result = posix_spawn_file_actions_addclose(&file_actions,
+						   STDIN_FILENO);
+	checkLambda(result);
+
+	char * const cargv[6] = {strdup(cmd.c_str()), strdup("-n"), strdup(nodeName.c_str()), strdup("-c"),
+				 strdup(cstr.c_str()), 0};
+	for (int i = 1; i <= jobs; i++) {
+		pid_t pid;
+		result = posix_spawn(&pid, cmd.c_str(), &file_actions, 0, cargv, 0);
+		checkLambda(result);
+		std::cout << "Child process[" << i << "]: " << pid << std::endl;
+	}
+}
+
 int main(int argc, char *argv[])
 {
-	static const char *nodeName = "/dev/dri/renderD128";
 	try {
+		std::string nodeName = "/dev/dri/renderD128";
 		int jobs = 1;
 		int count = 100;
 		char c = '\0';
@@ -131,28 +157,10 @@ int main(int argc, char *argv[])
 		}
 
 		if (jobs == 1) {
-			runall(nodeName, count);
+			runAll(nodeName, count);
 		}
 		else {
-			const std::string cstr(std::to_string(count));
-			posix_spawn_file_actions_t file_actions;
-			int result = posix_spawn_file_actions_init(&file_actions);
-			if (result)
-				throw std::system_error(result, std::generic_category(), argv[0]);
-
-			result = posix_spawn_file_actions_addclose(&file_actions,
-								   STDIN_FILENO);
-			if (result)
-				throw std::system_error(result, std::generic_category(), argv[0]);
-
-			char * const cargv[6] = {strdup(argv[0]), strdup("-n"), strdup(nodeName), strdup("-c"), strdup(cstr.c_str()), 0};
-			for (int i = 1; i <= jobs; i++) {
-				pid_t pid;
-				result = posix_spawn(&pid, argv[0], &file_actions, 0, cargv, 0);
-				if (result)
-					throw std::system_error(result, std::generic_category(), argv[0]);
-				std::cout << "Child process[" << i << "]: " << pid << std::endl;
-			}
+			runJobs(nodeName, count, jobs, argv[0]);
 		}
 
 	} catch (std::exception &ex) {

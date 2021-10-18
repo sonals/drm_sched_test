@@ -26,9 +26,9 @@
 
 static const int LEN = 128;
 
-void run(const char *nodeName, int count)
+void run(const std::string &nodeName, int count)
 {
-	int fd = open(nodeName, O_RDWR);
+	int fd = open(nodeName.c_str(), O_RDWR);
 
 	if (fd < 0)
 		throw std::system_error(errno, std::generic_category(), nodeName);
@@ -79,6 +79,32 @@ void run(const char *nodeName, int count)
 	close(fd);
 }
 
+static void runJobs(const std::string &nodeName, int count, int jobs, const std::string &cmd)
+{
+	auto checkLambda = [cmd](int result) {
+				   if (result)
+					   throw std::system_error(result, std::generic_category(), cmd);
+			   };
+
+	const std::string cstr(std::to_string(count));
+	posix_spawn_file_actions_t file_actions;
+	int result = posix_spawn_file_actions_init(&file_actions);
+	checkLambda(result);
+
+	result = posix_spawn_file_actions_addclose(&file_actions,
+						   STDIN_FILENO);
+	checkLambda(result);
+
+	char * const cargv[6] = {strdup(cmd.c_str()), strdup("-n"), strdup(nodeName.c_str()), strdup("-c"),
+				 strdup(cstr.c_str()), 0};
+	for (int i = 1; i <= jobs; i++) {
+		pid_t pid;
+		result = posix_spawn(&pid, cmd.c_str(), &file_actions, 0, cargv, 0);
+		checkLambda(result);
+		std::cout << "Child process[" << i << "]: " << pid << std::endl;
+	}
+}
+
 static void usage(const char *cmd)
 {
 	std::cout << "Usage " << cmd << " [-n <dev_node>] [-c <loop_count>] [-j <jobs>]\n";
@@ -112,31 +138,10 @@ int main(int argc, char *argv[])
 			usage(argv[0]);
 		}
 		if (jobs == 1) {
-			run(nodeName.c_str(), count);
+			run(nodeName, count);
 		}
 		else {
-			auto checkLambda = [argv](int result) {
-						   if (result)
-							   throw std::system_error(result, std::generic_category(), argv[0]);
-					   };
-
-			const std::string cstr(std::to_string(count));
-			posix_spawn_file_actions_t file_actions;
-			int result = posix_spawn_file_actions_init(&file_actions);
-			checkLambda(result);
-
-			result = posix_spawn_file_actions_addclose(&file_actions,
-								   STDIN_FILENO);
-			checkLambda(result);
-
-			char * const cargv[6] = {strdup(argv[0]), strdup("-n"), strdup(nodeName.c_str()), strdup("-c"),
-						 strdup(cstr.c_str()), 0};
-			for (int i = 1; i <= jobs; i++) {
-				pid_t pid;
-				result = posix_spawn(&pid, argv[0], &file_actions, 0, cargv, 0);
-				checkLambda(result);
-				std::cout << "Child process[" << i << "]: " << pid << std::endl;
-			}
+			runJobs(nodeName, count, jobs, argv[0]);
 		}
 	} catch (std::exception &ex) {
 		std::cout << ex.what() << std::endl;
