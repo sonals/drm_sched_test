@@ -59,10 +59,10 @@ static const char *sched_test_fence_get_timeline_name(struct dma_fence *fence)
 }
 
 /*
- * The IRQ fence is released either by
- * 1.  drm_sched_entity_fini() as part of entity tear down an application attempts
- *     to close device handle after finishing wait on all the submitted jobs, the last
- *     irq fence is released this way.
+ * The IRQ fence is released either by:
+ * 1.  drm_sched_entity_fini() as part of entity tear down when an application
+ *     attempts to close its device handle "after" finishing wait on all the
+ *     submitted jobs. The last irq fence is released this way.
  *
  * 2.  sched_test_job_fini() which is called
  * 2.a when the application finishes wait on a submitted job

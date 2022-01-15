@@ -28,7 +28,7 @@ struct sched_test_queue_state {
 /* Helper struct for the HW emulation thread */
 struct sched_test_hwemu {
 	struct sched_test_device *dev;
-	/* Kernel thread emulating HW and processing jobs submitted by scheduler */
+	/* Kernel thread emulating HW and processing jobs submitted by the DRM scheduler */
 	struct task_struct *hwemu_thread;
 	/* List of jobs to be processed by the kernel thread -- queue for the HW emulation thread */
 	struct list_head events_list;
@@ -47,7 +47,7 @@ struct sched_test_device {
 	struct drm_device drm;
 	struct platform_device *platform;
         struct sched_test_queue_state queue[SCHED_TSTQ_MAX];
-	/* Kernel threads emulating HW queues*/
+	/* Abstraction for emulated HW queues*/
 	struct sched_test_hwemu *hwemu[SCHED_TSTQ_MAX];
 };
 
@@ -55,23 +55,24 @@ struct sched_test_device {
 struct sched_test_file_priv {
 	struct sched_test_device *sdev;
 	struct drm_sched_entity entity;
-	/* Job objects submitted by application are tracked by this container */
+	/* Job objects submitted by an application are tracked by this container */
 	struct idr job_idr;
 };
 
 struct sched_test_job {
 	struct drm_sched_job base;
+	/* Reference counting of this job object */
 	struct kref refcount;
 	struct sched_test_device *sdev;
-	/* The done fence (if any) of another job this job is dependent on */
+	/* The 'done' fence (if any) of another job this job is dependent on */
 	struct dma_fence *in_fence;
 	/* Reference to the 'finished' fence owned by the drm_sched_job */
 	struct dma_fence *done_fence;
-	/* Fence created by the driver and used between scheduler and emulated HW thread */
+	/* Fence created by the driver and used between the DRM scheduler and the emulated HW thread */
 	struct dma_fence *irq_fence;
 	enum sched_test_queue qu;
 
-	/* Callback for the freeing of the job on refcount going to 0. */
+	/* Callback for freeing of the job on refcount going to 0. */
 	void (*free)(struct kref *ref);
 };
 

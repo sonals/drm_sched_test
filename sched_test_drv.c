@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2021 Xilinx, Inc.
+ * Copyright (C) 2021-2022 Xilinx, Inc.
  * Authors:
  *     Sonal Santan <sonal.santan@xilinx.com>
  */
@@ -182,7 +182,6 @@ static int __init sched_test_init(void)
 	if (ret < 0)
 		goto out_devres;
 
-	/* Final step: expose the device/driver to userspace */
 	ret = drm_dev_register(&sched_test_device_obj->drm, 0);
 	if (ret)
 		goto out_sched;
