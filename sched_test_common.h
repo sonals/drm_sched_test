@@ -54,7 +54,7 @@ struct sched_test_device {
 /* File private data structure */
 struct sched_test_file_priv {
 	struct sched_test_device *sdev;
-	struct drm_sched_entity entity;
+	struct drm_sched_entity entity[SCHED_TSTQ_MAX];
 	/* Job objects submitted by an application are tracked by this container */
 	struct idr job_idr;
 };

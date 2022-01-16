@@ -37,10 +37,18 @@ static int sched_test_open(struct drm_device *dev, struct drm_file *file)
 
 	priv->sdev = to_sched_test_dev(dev);
 	sched = &priv->sdev->queue[SCHED_TSTQ_A].sched;
-	ret = drm_sched_entity_init(&priv->entity, DRM_SCHED_PRIORITY_NORMAL, &sched,
+	ret = drm_sched_entity_init(&priv->entity[SCHED_TSTQ_A], DRM_SCHED_PRIORITY_NORMAL, &sched,
 				    1, NULL);
 	if (ret)
 		goto out;
+	sched = &priv->sdev->queue[SCHED_TSTQ_B].sched;
+	ret = drm_sched_entity_init(&priv->entity[SCHED_TSTQ_B], DRM_SCHED_PRIORITY_NORMAL, &sched,
+				    1, NULL);
+	if (ret) {
+		drm_sched_entity_destroy(&priv->entity[SCHED_TSTQ_A]);
+		goto out;
+	}
+
 	idr_init_base(&priv->job_idr, 1);
 	file->driver_priv = priv;
 	drm_info(dev, "File opened...");
@@ -67,7 +75,8 @@ static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 		drm_info(dev, "Reap outstanding jobs...");
 	else
 		drm_info(dev, "No outstanding jobs...");
-	drm_sched_entity_destroy(&priv->entity);
+	drm_sched_entity_destroy(&priv->entity[SCHED_TSTQ_B]);
+	drm_sched_entity_destroy(&priv->entity[SCHED_TSTQ_A]);
 	idr_for_each(&priv->job_idr, job_idr_fini, priv);
 	idr_destroy(&priv->job_idr);
 	kfree(priv);

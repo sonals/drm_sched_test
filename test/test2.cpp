@@ -7,6 +7,7 @@
 
 #include <drm/drm.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -19,6 +20,7 @@
 #include <system_error>
 #include <stdexcept>
 #include <memory>
+#include <list>
 #include <cstring>
 #include <chrono>
 
@@ -97,11 +99,23 @@ static void runJobs(const std::string &nodeName, int count, int jobs, const std:
 
 	char * const cargv[6] = {strdup(cmd.c_str()), strdup("-n"), strdup(nodeName.c_str()), strdup("-c"),
 				 strdup(cstr.c_str()), 0};
+	std::list<pid_t> pids;
 	for (int i = 1; i <= jobs; i++) {
 		pid_t pid;
 		result = posix_spawn(&pid, cmd.c_str(), &file_actions, 0, cargv, 0);
 		checkLambda(result);
 		std::cout << "Child process[" << i << "]: " << pid << std::endl;
+		pids.push_back(pid);
+	}
+	for (std::list<pid_t>::iterator i = pids.begin(); i != pids.end();) {
+		int status;
+		result = waitpid(*i, &status, WUNTRACED | WCONTINUED);
+		checkLambda((result == *i) ? 0 : -1);
+		if (WIFEXITED(status) || WIFSIGNALED(status)) {
+			i = pids.erase(i);
+			continue;
+		}
+		++i;
 	}
 }
 

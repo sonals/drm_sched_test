@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2021 Xilinx, Inc.
+ * Copyright (C) 2021-2022 Xilinx, Inc.
  * Authors:
  *     Sonal Santan <sonal.santan@xilinx.com>
  */
@@ -254,7 +254,7 @@ int sched_test_hwemu_threads_stop(struct sched_test_device *sdev)
 
 int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv *priv)
 {
-	int err = drm_sched_job_init(&job->base, &priv->entity, NULL);
+	int err = drm_sched_job_init(&job->base, &priv->entity[job->qu], NULL);
 
 	if (err)
 		return err;
@@ -272,7 +272,7 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
 //	DRM_INFO("job %p done_fence %p refcount %d -- B", job, job->done_fence,
 //		 kref_read(&job->done_fence->refcount));
-	drm_sched_entity_push_job(&job->base, &priv->entity);
+	drm_sched_entity_push_job(&job->base, &priv->entity[job->qu]);
 	return err;
 }
 
