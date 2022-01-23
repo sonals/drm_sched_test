@@ -82,7 +82,7 @@ void run(const std::string &nodeName, int count, bool release = true)
 		// Alternate between the two queues
 		sched_test_queue qu = (i & 0x1) ? SCHED_TSTQ_B : SCHED_TSTQ_A;
 		submitCmds[i].in.qu = qu;
-		submitCmds[i].in.in_fence = 0;
+		submitCmds[i].in.fence = 0;
 		//ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
 		f.ioctlcall(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
 	}

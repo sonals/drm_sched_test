@@ -94,8 +94,8 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 	struct sched_test_job *job;
 	int ret = 0;
 
-	if (args->in.in_fence) {
-		in_job = idr_find(&priv->job_idr, args->in.in_fence);
+	if (args->in.fence) {
+		in_job = idr_find(&priv->job_idr, args->in.fence);
 		in_fence = in_job ? in_job->done_fence : NULL;
 	}
 
