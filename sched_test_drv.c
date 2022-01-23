@@ -191,18 +191,18 @@ static int __init sched_test_init(void)
 	if (ret < 0)
 		goto out_devres;
 
-	ret = drm_dev_register(&sched_test_device_obj->drm, 0);
+	ret = sched_test_hwemu_threads_start(sched_test_device_obj);
 	if (ret)
 		goto out_sched;
 
-	ret = sched_test_hwemu_threads_start(sched_test_device_obj);
+	ret = drm_dev_register(&sched_test_device_obj->drm, 0);
 	if (ret)
-		goto out_drm_unregister;
+		goto out_hwemu;
 
 	return 0;
 
-out_drm_unregister:
-	drm_dev_unregister(&sched_test_device_obj->drm);
+out_hwemu:
+	sched_test_hwemu_threads_stop(sched_test_device_obj);
 out_sched:
 	sched_test_sched_fini(sched_test_device_obj);
 out_devres:

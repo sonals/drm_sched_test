@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-2.1 OR MIT */
 /*
- * Copyright (C) 2021 Xilinx, Inc.
+ * Copyright (C) 2021-2022 Xilinx, Inc.
  * Authors:
  *     Sonal Santan <sonal.santan@xilinx.com>
  */
@@ -30,17 +30,24 @@ static const int LEN = 128;
 
 void run(const std::string &nodeName, int count)
 {
-	int fd = open(nodeName.c_str(), O_RDWR);
+	struct raii {
+		int fd;
+		raii(const std::string &nodeName) {
+			fd = open(nodeName.c_str(), O_RDWR);
+			if (fd < 0)
+				throw std::system_error(errno, std::generic_category(), nodeName);
+		}
+		~raii() {
+			close(fd);
+		}
+	};
 
-	if (fd < 0)
-		throw std::system_error(errno, std::generic_category(), nodeName);
+	raii f(nodeName);
 
-	auto ioctlLambda = [fd, nodeName](auto code, auto data) {
-				   int result = ioctl(fd, code, data);
-				   if (result < 0) {
-					   close(fd);
+	auto ioctlLambda = [&](auto code, auto data) {
+				   int result = ioctl(f.fd, code, data);
+				   if (result < 0)
 					   throw std::system_error(errno, std::generic_category(), nodeName);
-				   }
 				   return result;
 			   };
 
@@ -77,8 +84,6 @@ void run(const std::string &nodeName, int count)
 	double iops = ((double)count * 1000000.0)/delay;
 	iops /= 1000;
 	std::cout << "IOPS: " << iops << " K/s" << std::endl;
-
-	close(fd);
 }
 
 static void runJobs(const std::string &nodeName, int count, int jobs, const std::string &cmd)

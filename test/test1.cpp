@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-2.1 OR MIT */
 /*
- * Copyright (C) 2021 Xilinx, Inc.
+ * Copyright (C) 2021-2022 Xilinx, Inc.
  * Authors:
  *     Sonal Santan <sonal.santan@xilinx.com>
  */
@@ -30,17 +30,24 @@ static const int LEN = 128;
 
 void run(const std::string &nodeName, int count, bool release = true)
 {
-	int fd = open(nodeName.c_str(), O_RDWR);
+	struct raii {
+		int fd;
+		raii(const std::string &nodeName) {
+			fd = open(nodeName.c_str(), O_RDWR);
+			if (fd < 0)
+				throw std::system_error(errno, std::generic_category(), nodeName);
+		}
+		~raii() {
+			close(fd);
+		}
+	};
 
-	if (fd < 0)
-		throw std::system_error(errno, std::generic_category(), nodeName);
+	raii f(nodeName);
 
-	auto ioctlLambda = [fd, nodeName](auto code, auto data) {
-				   int result = ioctl(fd, code, data);
-				   if (result < 0) {
-					   close(fd);
+	auto ioctlLambda = [&](auto code, auto data) {
+				   int result = ioctl(f.fd, code, data);
+				   if (result < 0)
 					   throw std::system_error(errno, std::generic_category(), nodeName);
-				   }
 				   return result;
 			   };
 
@@ -64,6 +71,7 @@ void run(const std::string &nodeName, int count, bool release = true)
 	std::vector<drm_sched_test_submit> submitCmds(count);
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
+		// Alternate between the two queues
 		sched_test_queue qu = (i & 0x1) ? SCHED_TSTQ_B : SCHED_TSTQ_A;
 		submitCmds[i].in.qu = qu;
 		submitCmds[i].in.in_fence = 0;
@@ -71,6 +79,7 @@ void run(const std::string &nodeName, int count, bool release = true)
 	}
 
 	if (release) {
+		// Reap all the submissions
 		for (int i = 0; i < count; i++) {
 			drm_sched_test_wait wait = {
 				.in = {
@@ -81,12 +90,12 @@ void run(const std::string &nodeName, int count, bool release = true)
 			ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
 		}
 	}
+	// Compute the throughput
 	auto end = std::chrono::high_resolution_clock::now();
 	double delay = (std::chrono::duration_cast<std::chrono::microseconds>(end - start)).count();
 	double iops = ((double)count * 1000000.0)/delay;
 	iops /= 1000;
 	std::cout << "IOPS: " << iops << " K/s" << std::endl;
-	close(fd);
 }
 
 static void usage(const char *cmd)
