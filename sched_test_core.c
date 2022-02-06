@@ -87,7 +87,7 @@ const struct dma_fence_ops sched_test_fence_ops = {
 /*
  * Custom routine for IRQ fence creation
  */
-struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev, enum sched_test_queue qu)
+static struct dma_fence *sched_test_fence_create(struct sched_test_device *sdev, enum sched_test_queue qu)
 {
 	struct sched_test_fence *fence = kzalloc(sizeof(*fence), GFP_KERNEL);
 	if (!fence)
