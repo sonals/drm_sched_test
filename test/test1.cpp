@@ -31,25 +31,32 @@ static const int LEN = 128;
 void run(const std::string &nodeName, int count, bool release = true)
 {
 	struct raii {
+		const std::string &node;
 		int fd;
-		raii(const std::string &nodeName) {
-			fd = open(nodeName.c_str(), O_RDWR);
+		raii(const std::string &_node) : node(_node) {
+			fd = open(node.c_str(), O_RDWR);
 			if (fd < 0)
-				throw std::system_error(errno, std::generic_category(), nodeName);
+				throw std::system_error(errno, std::generic_category(), node);
 		}
 		~raii() {
 			close(fd);
+		}
+		int ioctlcall(unsigned long code, void *data) {
+			int result = ioctl(fd, code, data);
+			if (result < 0)
+				throw std::system_error(errno, std::generic_category(), node);
+			return result;
 		}
 	};
 
 	raii f(nodeName);
 
-	auto ioctlLambda = [&](auto code, auto data) {
+	/*auto ioctlLambda = [&](auto code, auto data) {
 				   int result = ioctl(f.fd, code, data);
 				   if (result < 0)
 					   throw std::system_error(errno, std::generic_category(), nodeName);
 				   return result;
-			   };
+				   };*/
 
 	drm_version version;
 	std::memset(&version, 0, sizeof(version));
@@ -64,7 +71,8 @@ void run(const std::string &nodeName, int count, bool release = true)
 	version.date = date.get();
 	version.date_len = LEN;
 
-	ioctlLambda(DRM_IOCTL_VERSION, &version);
+	//ioctlLambda(DRM_IOCTL_VERSION, &version);
+	f.ioctlcall(DRM_IOCTL_VERSION, &version);
 	std::cout << version.name << std::endl;
 	std::cout << version.desc << std::endl;
 
@@ -75,7 +83,8 @@ void run(const std::string &nodeName, int count, bool release = true)
 		sched_test_queue qu = (i & 0x1) ? SCHED_TSTQ_B : SCHED_TSTQ_A;
 		submitCmds[i].in.qu = qu;
 		submitCmds[i].in.in_fence = 0;
-		ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
+		//ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
+		f.ioctlcall(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
 	}
 
 	if (release) {
@@ -87,7 +96,8 @@ void run(const std::string &nodeName, int count, bool release = true)
 					.timeout = 100
 				}
 			};
-			ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
+			//ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
+			f.ioctlcall(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
 		}
 	}
 	// Compute the throughput
