@@ -31,25 +31,32 @@ static const int LEN = 128;
 void run(const std::string &nodeName, int count)
 {
 	struct raii {
+		const std::string &node;
 		int fd;
-		raii(const std::string &nodeName) {
-			fd = open(nodeName.c_str(), O_RDWR);
+		raii(const std::string &_node) : node(_node) {
+			fd = open(node.c_str(), O_RDWR);
 			if (fd < 0)
-				throw std::system_error(errno, std::generic_category(), nodeName);
+				throw std::system_error(errno, std::generic_category(), node);
 		}
 		~raii() {
 			close(fd);
+		}
+		int ioctlcall(unsigned long code, void *data) {
+			int result = ioctl(fd, code, data);
+			if (result < 0)
+				throw std::system_error(errno, std::generic_category(), node);
+			return result;
 		}
 	};
 
 	raii f(nodeName);
 
-	auto ioctlLambda = [&](auto code, auto data) {
+/*	auto ioctlLambda = [&](auto code, auto data) {
 				   int result = ioctl(f.fd, code, data);
 				   if (result < 0)
 					   throw std::system_error(errno, std::generic_category(), nodeName);
 				   return result;
-			   };
+				   };*/
 
 	drm_version version;
 	std::memset(&version, 0, sizeof(version));
@@ -64,7 +71,8 @@ void run(const std::string &nodeName, int count)
 	version.date = date.get();
 	version.date_len = LEN;
 
-	ioctlLambda(DRM_IOCTL_VERSION, &version);
+	//ioctlLambda(DRM_IOCTL_VERSION, &version);
+	f.ioctlcall(DRM_IOCTL_VERSION, &version);
 	std::cout << version.name << std::endl;
 	std::cout << version.desc << std::endl;
 
@@ -75,9 +83,11 @@ void run(const std::string &nodeName, int count)
 				.qu = SCHED_TSTQ_A
 			}
 		};
-		ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submit);
+		//ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submit);
+		f.ioctlcall(DRM_IOCTL_SCHED_TEST_SUBMIT, &submit);
 		drm_sched_test_wait wait = {submit.out.fence, 100};
-		ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
+		//ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
+		f.ioctlcall(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
 	}
 	auto end = std::chrono::high_resolution_clock::now();
 	double delay = (std::chrono::duration_cast<std::chrono::microseconds>(end - start)).count();
