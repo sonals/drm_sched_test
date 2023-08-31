@@ -31,3 +31,6 @@ endif
 	./test1 -c 10000
 	./test2 -c 10000
 	./test1 -c 10000 -j 2
+
+compiledb: compile_commands.json
+	bear -- make debug=1 all

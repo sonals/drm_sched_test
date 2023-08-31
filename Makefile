@@ -32,6 +32,7 @@ endif
 all:
 	@echo $(PWD)
 	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules
+	sudo $(KERNEL_SRC)/scripts/sign-file sha256 /var/lib/dkms/mok.key /var/lib/dkms/mok.pub sched_test.ko
 
 install: all
 	sudo $(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules_install
