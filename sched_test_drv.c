@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2021-2022 Xilinx, Inc.
+ * Copyright (C) 2022-2023 Advanced Micro Devices, Inc.
  * Authors:
- *     Sonal Santan <sonal.santan@xilinx.com>
+ *     Sonal Santan <sonal.santan@amd.com>
  */
 
 #include <linux/module.h>
@@ -113,7 +114,8 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 	ret = sched_test_job_init(job, priv);
 	if (ret)
 		goto out_idr;
-	job->in_fence = dma_fence_get(in_fence);
+	drm_sched_job_add_dependency(&job->base, dma_fence_get(in_fence));
+//	job->in_fence = dma_fence_get(in_fence);
 	return 0;
 
 out_idr:

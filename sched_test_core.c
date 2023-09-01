@@ -263,6 +263,8 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	kref_init(&job->refcount);
 	job->free = sched_test_job_free_lambda;
 	job->sdev = priv->sdev;
+	drm_sched_job_arm(&job->base);
+	drm_info(&priv->sdev->drm, "After ref init...");
 //	DRM_INFO("job %p done_fence %p refcount %d -- A", job, &job->base.s_fence->finished,
 //		 kref_read(&job->base.s_fence->finished.refcount));
 	/*
@@ -270,9 +272,12 @@ int sched_test_job_init(struct sched_test_job *job, struct sched_test_file_priv 
 	 * if/when the client process waits for the job completion
 	 */
 	job->done_fence = dma_fence_get(&job->base.s_fence->finished);
+	drm_info(&priv->sdev->drm, "After done_fence...");
 //	DRM_INFO("job %p done_fence %p refcount %d -- B", job, job->done_fence,
 //		 kref_read(&job->done_fence->refcount));
-	drm_sched_entity_push_job(&job->base, &priv->entity[job->qu]);
+//	drm_sched_entity_push_job(&job->base, &priv->entity[job->qu]);
+	drm_sched_entity_push_job(&job->base);
+	drm_info(&priv->sdev->drm, "After push job...");
 	return err;
 }
 
@@ -281,7 +286,7 @@ void sched_test_job_fini(struct sched_test_job *job)
 //	int count = kref_read(&job->in_fence->refcount);
 //	drm_info(&job->sdev->drm, "in_fence %p refcount %d", job, count);
 
-	dma_fence_put(job->in_fence);
+//	dma_fence_put(job->in_fence);
 	DRM_DEBUG_DRIVER("job %p entity->last_scheduled %p", job, job->base.entity->last_scheduled);
 //	DRM_INFO("job %p done_fence %p refcount %d -- C", job, job->done_fence,
 //		 kref_read(&job->done_fence->refcount));
@@ -290,7 +295,7 @@ void sched_test_job_fini(struct sched_test_job *job)
 
 }
 
-
+/*
 static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_job,
 						   struct drm_sched_entity *sched_entity)
 {
@@ -299,7 +304,7 @@ static struct dma_fence *sched_test_job_dependency(struct drm_sched_job *sched_j
 			 kref_read(&job->done_fence->refcount));
 	return job->in_fence;
 }
-
+*/
 
 static struct dma_fence *sched_test_job_run(struct drm_sched_job *sched_job)
 {
@@ -357,14 +362,12 @@ static void sched_test_job_free(struct drm_sched_job *sched_job)
 }
 
 static const struct drm_sched_backend_ops sched_test_regular_ops = {
-	.dependency = sched_test_job_dependency,
 	.run_job = sched_test_job_run,
 	.timedout_job = sched_test_job_timedout,
 	.free_job = sched_test_job_free,
 };
 
 static const struct drm_sched_backend_ops sched_test_fast_ops = {
-	.dependency = sched_test_job_dependency,
 	.run_job = sched_test_job_run,
 	.timedout_job = sched_test_job_timedout,
 	.free_job = sched_test_job_free,
@@ -381,7 +384,7 @@ int sched_test_sched_init(struct sched_test_device *sdev)
 			     &sched_test_regular_ops,
 			     hw_jobs_limit, job_hang_limit,
 			     msecs_to_jiffies(hang_limit_ms),
-			     NULL, NULL, sched_test_queue_name(SCHED_TSTQ_A));
+			     NULL, NULL, sched_test_queue_name(SCHED_TSTQ_A), sdev->drm.dev);
 	if (ret) {
 		drm_err(&sdev->drm, "Failed to create %s scheduler: %d", sched_test_queue_name(SCHED_TSTQ_A), ret);
 		return ret;
@@ -391,7 +394,7 @@ int sched_test_sched_init(struct sched_test_device *sdev)
 			     &sched_test_fast_ops,
 			     hw_jobs_limit, job_hang_limit,
 			     msecs_to_jiffies(hang_limit_ms),
-			     NULL, NULL, sched_test_queue_name(SCHED_TSTQ_B));
+			     NULL, NULL, sched_test_queue_name(SCHED_TSTQ_B), sdev->drm.dev);
 	if (ret) {
 		drm_err(&sdev->drm, "Failed to create %s scheduler: %d", sched_test_queue_name(SCHED_TSTQ_B),
 			ret);
