@@ -30,9 +30,17 @@ static struct sched_test_device *sched_test_device_obj;
 
 static int sched_test_open(struct drm_device *dev, struct drm_file *file)
 {
+	struct sched_test_file_priv *priv = NULL;
 	struct drm_gpu_scheduler *sched;
 	int ret = 0;
-	struct sched_test_file_priv *priv = kzalloc(sizeof(struct sched_test_file_priv), GFP_KERNEL);
+
+	/* Do not allow users to open PRIMARY node, /dev/dri/cardX node.
+	 * Users should only open RENDER, /dev/dri/renderX node
+	 */
+	if (drm_is_primary_client(file))
+		return -EPERM;
+
+	priv = kzalloc(sizeof(struct sched_test_file_priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 
@@ -156,7 +164,7 @@ static const struct drm_ioctl_desc sched_test_ioctls[] = {
 DEFINE_DRM_GEM_FOPS(sched_test_driver_fops);
 
 static struct drm_driver sched_test_driver = {
-	.driver_features		= DRIVER_GEM | DRIVER_RENDER,
+	.driver_features		= DRIVER_GEM | DRIVER_RENDER | DRIVER_SYNCOBJ | DRIVER_SYNCOBJ_TIMELINE,
 	.open				= sched_test_open,
         .postclose                      = sched_test_postclose,
 	.ioctls				= sched_test_ioctls,

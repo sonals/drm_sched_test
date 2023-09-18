@@ -1,11 +1,13 @@
 # # SPDX-License-Identifier: MIT
 #
 # Copyright (C) 2021 Xilinx, Inc.
+# Copyright (C) 2022-2023 Advanced Micro Devices, Inc.
 # Authors:
-#     Sonal Santan <sonal.santan@xilinx.com>
+#     Sonal Santan <sonal.santan@amd.com>
 #
 
-CXXFLAGS = -g -Wall -I ../uapi
+CXXFLAGS = -Wall -I /usr/include/libdrm -I ../uapi
+LDLIBS = -ldrm
 CC = g++
 
 debug ?= 0
@@ -15,14 +17,16 @@ else
     CXXFLAGS +=-DNDEBUG -O2
 endif
 
-all: test1 test2
+all: test0 test1 test2
+
+test0: test0.o
 
 test1: test1.o
 
 test2: test2.o
 
 clean:
-	$(RM) -f test1.o test2.o test1 test2
+	$(RM) -f test0.o test1.o test2.o test0 test1 test2
 
 run: all
 ifeq ($(verbose), 1)
@@ -32,5 +36,5 @@ endif
 	./test2 -c 10000
 	./test1 -c 10000 -j 2
 
-compiledb: compile_commands.json
+compdb: compile_commands.json
 	bear -- make debug=1 all

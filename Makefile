@@ -47,5 +47,5 @@ clean:
 	rm -rf *.o *.o.d *~ core .depend .*.cmd *.ko *.ko.unsigned *.mod.c \
 	.tmp_versions *.symvers modules.order
 
-compiledb:
+compdb:
 	bear -- make all
