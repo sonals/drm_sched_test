@@ -23,6 +23,7 @@ static void usage(const char *cmd)
 }
 
 class syncobj {
+	static const long long delay = 10000ll;
 	const unsigned _fd;
 	const std::string _nodeName;
 	unsigned int _handle;
@@ -49,7 +50,15 @@ public:
 	void wait() const {
 		unsigned int handles[4];
 		handles[0] = _handle;
-		int result = drmSyncobjWait(_fd, handles, 1, 10000, 0, nullptr);
+		int result, c;
+		for (c = 1; c <= 1000; c++) {
+			result = drmSyncobjWait(_fd, handles, 1, delay, 0, nullptr);
+			if (result == -ETIME)
+				continue;
+			if (result <= 0)
+				break;
+		}
+		std::cout << "Total wait " << (c * delay) / 1000 << " us\n";
 		if (result < 0)
 			throw std::system_error(errno, std::generic_category(), _nodeName);
 	}
