@@ -81,8 +81,9 @@ void run(const std::string &nodeName, int count, bool release = true)
 	for (int i = 0; i < count; i++) {
 		// Alternate between the two queues
 		sched_test_queue qu = (i & 0x1) ? SCHED_TSTQ_B : SCHED_TSTQ_A;
-		submitCmds[i].in.qu = qu;
-		submitCmds[i].in.fence = 0;
+		submitCmds[i].qu = qu;
+		submitCmds[i].in_fence = 0;
+		submitCmds[i].out_fence = 0;
 		//ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
 		f.ioctlcall(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
 	}
@@ -92,7 +93,7 @@ void run(const std::string &nodeName, int count, bool release = true)
 		for (int i = 0; i < count; i++) {
 			drm_sched_test_wait wait = {
 				.in = {
-					.fence = submitCmds[i].out.fence,
+					.fence = submitCmds[i].out_fence,
 					.timeout = 100
 				}
 			};

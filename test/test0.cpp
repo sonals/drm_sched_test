@@ -14,7 +14,7 @@
 #include <chrono>
 #include <thread>
 
-static const int LEN = 128;
+#include "sched_test.h"
 
 static void usage(const char *cmd)
 {
@@ -22,17 +22,18 @@ static void usage(const char *cmd)
 	throw std::invalid_argument("");
 }
 
-struct syncobj {
+class syncobj {
 	const unsigned _fd;
 	const std::string _nodeName;
-	unsigned int handle;
+	unsigned int _handle;
+public:
 	syncobj(int fd, const std::string &nodeName) : _fd(fd), _nodeName(nodeName) {
-		int result = drmSyncobjCreate(_fd, 0, &handle);
+		int result = drmSyncobjCreate(_fd, 0, &_handle);
 		if (result < 0)
 			throw std::system_error(errno, std::generic_category(), _nodeName);
 	}
 	~syncobj() {
-		int result = drmSyncobjDestroy(_fd, handle);
+		int result = drmSyncobjDestroy(_fd, _handle);
 		if (result < 0) {
 			// Cannot throw in the destructor, so print out the error :-(
 			const std::runtime_error eobj = std::system_error(errno, std::generic_category(),
@@ -41,22 +42,30 @@ struct syncobj {
 		}
 	}
 	void reset() {
-		int result = drmSyncobjReset(_fd, &handle, 1);
+		int result = drmSyncobjReset(_fd, &_handle, 1);
 		if (result < 0)
 			throw std::system_error(errno, std::generic_category(), _nodeName);
 	}
+	void wait() const {
+		unsigned int handles[4];
+		handles[0] = _handle;
+		int result = drmSyncobjWait(_fd, handles, 1, 10000, 0, nullptr);
+		if (result < 0)
+			throw std::system_error(errno, std::generic_category(), _nodeName);
+	}
+	int operator()() const {
+		return _handle;
+	}
 };
 
-struct raii {
-	std::string _nodeName;
-	int _fd;
-	raii(const int _node) {
-		_fd = drmOpenRender(_node);
+class raii {
+	const int _fd;
+	const std::string _nodeName;
+public:
+	raii(const int node) : _fd(drmOpenRender(node)),
+			       _nodeName((_fd < 0) ? "" : drmGetDeviceNameFromFd2(_fd)) {
 		if (_fd < 0)
 			throw std::system_error(errno, std::generic_category(), "render");
-		char *name = drmGetDeviceNameFromFd2(_fd);
-		_nodeName = name;
-		drmFree(name);
 	}
 	~raii() {
 		close(_fd);
@@ -74,7 +83,7 @@ struct raii {
 		std::cout << version->desc << std::endl;
 		drmFreeVersion(version);
 	}
-	syncobj syncobjCreate() const {
+	syncobj createSyncobj() const {
 		return syncobj(_fd, _nodeName);
 	}
 };
@@ -83,17 +92,24 @@ void run(const int node, bool release = true)
 {
 	const raii f(node);
 	f.showVersion();
-	syncobj sobj(f.syncobjCreate());
+	syncobj soutobja(f.createSyncobj());
+	syncobj soutobjb(f.createSyncobj());
+	drm_sched_test_submit submitb = {0, soutobjb(), SCHED_TSTQ_B};
+	f.callIoctl(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitb);
+	drm_sched_test_submit submita = {soutobjb(), soutobja(), SCHED_TSTQ_A};
+	f.callIoctl(DRM_IOCTL_SCHED_TEST_SUBMIT, &submita);
+	if (release)
+		soutobja.wait();
 }
 
 static void runAll(const unsigned minor = 128)
 {
-	std::cout << "Start auto job cleanup test..." << std::endl;
-	run(minor, false);
-	std::cout << "Finished auto job cleanup test" << std::endl;
 	std::cout << "Start regular job test..." << std::endl;
 	run(minor);
 	std::cout << "Finished regular job test..." << std::endl;
+	std::cout << "Start auto job cleanup test..." << std::endl;
+	run(minor, false);
+	std::cout << "Finished auto job cleanup test" << std::endl;
 }
 
 int main(int argc, char *argv[])

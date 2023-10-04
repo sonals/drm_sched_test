@@ -27,18 +27,10 @@ enum sched_test_queue {
 #define DRM_SCHED_TEST_SUBMIT                     0x00
 #define DRM_SCHED_TEST_WAIT                       0x01
 
-struct drm_sched_test_submit_in {
-	int fence;
+struct drm_sched_test_submit {
+	int in_fence;
+	int out_fence;
 	enum sched_test_queue qu;
-};
-
-struct drm_sched_test_submit_out {
-	int fence;
-};
-
-union drm_sched_test_submit {
-	struct drm_sched_test_submit_in in;
-	struct drm_sched_test_submit_out out;
 };
 
 struct drm_sched_test_wait_in {
@@ -55,7 +47,7 @@ union drm_sched_test_wait {
 	struct drm_sched_test_wait_out out;
 };
 
-#define DRM_IOCTL_SCHED_TEST_SUBMIT           DRM_IOWR(DRM_COMMAND_BASE + DRM_SCHED_TEST_SUBMIT, union drm_sched_test_submit)
+#define DRM_IOCTL_SCHED_TEST_SUBMIT           DRM_IOWR(DRM_COMMAND_BASE + DRM_SCHED_TEST_SUBMIT, struct drm_sched_test_submit)
 #define DRM_IOCTL_SCHED_TEST_WAIT             DRM_IOWR(DRM_COMMAND_BASE + DRM_SCHED_TEST_WAIT, union drm_sched_test_wait)
 
 

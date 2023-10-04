@@ -36,5 +36,7 @@ endif
 	./test2 -c 10000
 	./test1 -c 10000 -j 2
 
-compdb: compile_commands.json
+compile_commands.json: test0.cpp test1.cpp test2.cpp
 	bear -- make debug=1 all
+
+compdb: compile_commands.json

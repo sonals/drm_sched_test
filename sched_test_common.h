@@ -11,7 +11,6 @@
 
 #include <linux/platform_device.h>
 #include <linux/spinlock_types.h>
-#include <linux/idr.h>
 
 #include <drm/drm_device.h>
 #include <drm/drm_drv.h>
@@ -55,14 +54,10 @@ struct sched_test_device {
 struct sched_test_file_priv {
 	struct sched_test_device *sdev;
 	struct drm_sched_entity entity[SCHED_TSTQ_MAX];
-	/* Job objects submitted by an application are tracked by this container */
-	struct idr job_idr;
 };
 
 struct sched_test_job {
 	struct drm_sched_job base;
-	/* Reference counting of this job object */
-	struct kref refcount;
 	struct sched_test_device *sdev;
 	/* The 'done' fence (if any) of another job this job is dependent on */
 //	struct dma_fence *in_fence;
@@ -71,9 +66,6 @@ struct sched_test_job {
 	/* Fence created by the driver and used between the DRM scheduler and the emulated HW thread */
 	struct dma_fence *irq_fence;
 	enum sched_test_queue qu;
-
-	/* Callback for freeing of the job on refcount going to 0. */
-	void (*free)(struct kref *ref);
 };
 
 /* Models the IRQ fence */

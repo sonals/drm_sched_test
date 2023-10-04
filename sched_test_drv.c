@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
+#include <linux/version.h>
 
 #include <drm/drm_device.h>
 #include <drm/drm_file.h>
@@ -16,6 +17,9 @@
 #include <drm/drm_drv.h>
 #include <drm/drm_gem.h>
 #include <drm/gpu_scheduler.h>
+#include <drm/drm_syncobj.h>
+#include <drm/gpu_scheduler.h>
+
 
 #include "sched_test_common.h"
 #include "uapi/sched_test.h"
@@ -27,6 +31,50 @@
 #define DRIVER_MINOR	0
 
 static struct sched_test_device *sched_test_device_obj;
+
+static inline int sched_test_add_dependencies(struct sched_test_job *job, struct drm_file *file_priv,
+					      int in_fence)
+{
+	struct sched_test_file_priv *priv = file_priv->driver_priv;
+	struct drm_device *dev = &priv->sdev->drm;
+	struct drm_syncobj *syncobj = NULL;
+	struct dma_fence *fence = NULL;
+	int ret = 0;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 3, 0)
+	syncobj = drm_syncobj_find(file_priv, in_fence);
+
+	drm_info(dev, "<6.3.0Before add depedency fence = %d...", in_fence);
+	if (!syncobj)
+		return -ENOENT;
+
+	fence = drm_syncobj_fence_get(syncobj);
+	if (!fence) {
+		drm_syncobj_put(syncobj);
+		return -ENOENT;
+	}
+
+	ret = drm_sched_job_add_dependency(&job->base, fence);
+
+	dma_fence_put(fence);
+	drm_syncobj_put(syncobj);
+	drm_info(dev, "After add depedency ret = %d...", ret);
+	return ret;
+
+#else
+	drm_info(dev, ">=6.3.0Before add depedency fence = %d...", in_fence);
+#if 0
+	syncobj = drm_syncobj_find(file_priv, in_fence);
+	drm_info(dev, "After find syncobj find, in_fence = %d, ret = %d, syncobj = 0x%p...", in_fence, ret, syncobj);
+	fence = drm_syncobj_fence_get(syncobj);
+	drm_info(dev, "After find syncobj fence get fence = 0x%p...", fence);
+	ret = drm_syncobj_find_fence(file_priv, in_fence, 0, 0, &fence);
+	drm_info(dev, "After find fence in_fence = %d, ret = %d, fence = 0x%p...", in_fence, ret, fence);
+#endif
+	ret = drm_sched_job_add_syncobj_dependency(&job->base, file_priv, in_fence, 0);
+	drm_info(dev, "After add depedency ret = %d...", ret);
+	return ret;
+#endif
+}
 
 static int sched_test_open(struct drm_device *dev, struct drm_file *file)
 {
@@ -58,9 +106,8 @@ static int sched_test_open(struct drm_device *dev, struct drm_file *file)
 		goto out;
 	}
 
-	idr_init_base(&priv->job_idr, 1);
 	file->driver_priv = priv;
-	drm_info(dev, "File opened...");
+	drm_info(dev, "File opened, sched entity A and B created...");
 	return 0;
 
 out:
@@ -68,26 +115,13 @@ out:
 	return ret;
 }
 
-static int job_idr_fini(int id, void *p, void *data)
-{
-	struct sched_test_job *job = p;
-	sched_test_job_fini(job);
-	return 0;
-}
 
 static void sched_test_postclose(struct drm_device *dev, struct drm_file *file)
 {
 	struct sched_test_file_priv *priv = file->driver_priv;
-	const bool outstanding = idr_is_empty(&priv->job_idr);
 	drm_info(dev, "File closing...");
-	if (!outstanding)
-		drm_info(dev, "Reap outstanding jobs...");
-	else
-		drm_info(dev, "No outstanding jobs...");
 	drm_sched_entity_destroy(&priv->entity[SCHED_TSTQ_B]);
 	drm_sched_entity_destroy(&priv->entity[SCHED_TSTQ_A]);
-	idr_for_each(&priv->job_idr, job_idr_fini, priv);
-	idr_destroy(&priv->job_idr);
 	kfree(priv);
 	drm_info(dev, "File closed!");
 	file->driver_priv = NULL;
@@ -97,68 +131,63 @@ int sched_test_submit_ioctl(struct drm_device *dev, void *data,
 			    struct drm_file *file_priv)
 {
 	struct sched_test_file_priv *priv = file_priv->driver_priv;
-	union drm_sched_test_submit *args = data;
-	struct sched_test_job *in_job = NULL;
-	struct dma_fence *in_fence = NULL;
+	const struct drm_sched_test_submit *args = data;
+	struct drm_syncobj *out_sync = NULL;
 	struct sched_test_job *job;
 	int ret = 0;
 
-	if (args->in.fence) {
-		in_job = idr_find(&priv->job_idr, args->in.fence);
-		in_fence = in_job ? in_job->done_fence : NULL;
+	if (args->out_fence) {
+		out_sync = drm_syncobj_find(file_priv, args->out_fence);
+		if (!out_sync)
+			return -ENOENT;
 	}
 
+	drm_info(dev, "After out fence...");
 	job = kzalloc(sizeof(*job), GFP_KERNEL);
-	if (!job)
-		return -ENOMEM;
+	if (!job) {
+		ret = -ENOMEM;
+		goto out_put;
+	}
 
-	job->qu = args->in.qu;
-	ret = idr_alloc(&priv->job_idr, job, 1, 0, GFP_KERNEL);
-	if (ret > 0)
-		args->out.fence = ret;
-	else
-		goto out_free;
+	job->qu = args->qu;
 
 	ret = sched_test_job_init(job, priv);
 	if (ret)
-		goto out_idr;
-	drm_sched_job_add_dependency(&job->base, dma_fence_get(in_fence));
-//	job->in_fence = dma_fence_get(in_fence);
+		goto out_free;
+
+	drm_info(dev, "After job init...");
+	if (args->in_fence) {
+		ret = sched_test_add_dependencies(job, file_priv, args->in_fence);
+		if (ret)
+			/*
+			 * Note if ret == -ENOENT, then it implies that user sent an empty sync
+			 * object with no fence, which we are treating as error.
+			 */
+			goto out_dep;
+	}
+
+	drm_info(dev, "After in fence...");
+	if (out_sync) {
+		drm_syncobj_replace_fence(out_sync, job->done_fence);
+		drm_syncobj_put(out_sync);
+	}
+	drm_sched_entity_push_job(&job->base);
+	drm_info(dev, "After push job...");
 	return 0;
 
-out_idr:
-	idr_remove(&priv->job_idr, args->out.fence);
+out_dep:
+	sched_test_job_fini(job);
 out_free:
 	kfree(job);
-	args->out.fence = 0xffffffff;
+out_put:
+	if (out_sync)
+		drm_syncobj_put(out_sync);
 	return ret;
 }
 
-int sched_test_wait_ioctl(struct drm_device *dev, void *data,
-			  struct drm_file *file_priv)
-{
-	struct sched_test_file_priv *priv = file_priv->driver_priv;
-	union drm_sched_test_wait *args = data;
-	struct sched_test_job *job = idr_find(&priv->job_idr, args->in.fence);
-	signed long int left = 0;
-
-	if (!job)
-		return -EINVAL;
-	left = dma_fence_wait_timeout(job->done_fence, true, args->in.timeout);
-	if (left > 0) {
-		idr_remove(&priv->job_idr, args->in.fence);
-		sched_test_job_fini(job);
-		args->out.timeout = left;
-		return 0;
-	}
-	if (left < 0)
-		return left;
-	return -ETIMEDOUT;
-}
 
 static const struct drm_ioctl_desc sched_test_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(SCHED_TEST_SUBMIT, sched_test_submit_ioctl, DRM_RENDER_ALLOW | DRM_AUTH),
-	DRM_IOCTL_DEF_DRV(SCHED_TEST_WAIT, sched_test_wait_ioctl, DRM_RENDER_ALLOW | DRM_AUTH),
 };
 
 DEFINE_DRM_GEM_FOPS(sched_test_driver_fops);
@@ -236,6 +265,6 @@ static void __exit sched_test_exit(void)
 module_init(sched_test_init);
 module_exit(sched_test_exit);
 
-MODULE_AUTHOR("Sonal Santan <sonal.santan@xilinx.com>");
+MODULE_AUTHOR("Sonal Santan <sonal.santan@amd.com>");
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL v2");

@@ -13,7 +13,7 @@ sched_test-y := \
 	sched_test_drv.o \
 	sched_test_core.o
 
-
+COMPILE_DB = compile_commands.json
 CONFIG_MODULE_SIG=n
 KERNEL_VERSION ?= $(shell uname -r)
 KERNEL_SRC := /lib/modules/$(KERNEL_VERSION)/build
@@ -47,5 +47,7 @@ clean:
 	rm -rf *.o *.o.d *~ core .depend .*.cmd *.ko *.ko.unsigned *.mod.c \
 	.tmp_versions *.symvers modules.order
 
-compdb:
+$(COMPILE_DB): main.cpp kernel.cpp
 	bear -- make all
+
+compdb: $(COMPILE_DB)
