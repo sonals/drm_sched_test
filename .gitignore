@@ -9,3 +9,7 @@ tags
 Module.symvers
 modules.order
 compile_commands.json
+test0
+test1
+test2
+test3

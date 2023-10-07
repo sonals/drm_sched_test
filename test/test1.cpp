@@ -9,96 +9,48 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
 #include <unistd.h>
 #include <spawn.h>
 
 #include <iostream>
-#include <cerrno>
 #include <system_error>
 #include <memory>
 #include <cstring>
+#include <utility>
 #include <vector>
 #include <list>
 #include <chrono>
 #include <thread>
 
 #include "sched_test.h"
+#include "common.h"
 
-static const int LEN = 128;
-
-void run(const std::string &nodeName, int count, bool release = true)
+void run(const int node, int count, bool release = true)
 {
-	struct raii {
-		const std::string &node;
-		int fd;
-		raii(const std::string &_node) : node(_node) {
-			fd = open(node.c_str(), O_RDWR);
-			if (fd < 0)
-				throw std::system_error(errno, std::generic_category(), node);
-		}
-		~raii() {
-			close(fd);
-		}
-		int ioctlcall(unsigned long code, void *data) {
-			int result = ioctl(fd, code, data);
-			if (result < 0)
-				throw std::system_error(errno, std::generic_category(), node);
-			return result;
-		}
-	};
+	/*
+	 * Runs two loops: The first loop submits all jobs; the second loop waits for each submitted job
+	 */
 
-	raii f(nodeName);
+	const schedtest::raii f(node);
+	f.showVersion();
+	std::vector<std::pair<drm_sched_test_submit, schedtest::syncobj>> submitCmds;
 
-	/*auto ioctlLambda = [&](auto code, auto data) {
-				   int result = ioctl(f.fd, code, data);
-				   if (result < 0)
-					   throw std::system_error(errno, std::generic_category(), nodeName);
-				   return result;
-				   };*/
-
-	drm_version version;
-	std::memset(&version, 0, sizeof(version));
-	std::unique_ptr<char[]> name(new char[LEN]);
-	std::unique_ptr<char[]> desc(new char[LEN]);
-	std::unique_ptr<char[]> date(new char[LEN]);
-
-	version.name = name.get();
-	version.name_len = LEN;
-	version.desc = desc.get();
-	version.desc_len = LEN;
-	version.date = date.get();
-	version.date_len = LEN;
-
-	//ioctlLambda(DRM_IOCTL_VERSION, &version);
-	f.ioctlcall(DRM_IOCTL_VERSION, &version);
-	std::cout << version.name << std::endl;
-	std::cout << version.desc << std::endl;
-
-	std::vector<drm_sched_test_submit> submitCmds(count);
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < count; i++) {
 		// Alternate between the two queues
 		sched_test_queue qu = (i & 0x1) ? SCHED_TSTQ_B : SCHED_TSTQ_A;
-		submitCmds[i].qu = qu;
-		submitCmds[i].in_fence = 0;
-		submitCmds[i].out_fence = 0;
-		//ioctlLambda(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
-		f.ioctlcall(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds[i]);
+		schedtest::syncobj soutobj(f.createSyncobj());
+		drm_sched_test_submit submit = {0, soutobj(), qu};
+		submitCmds.push_back(std::make_pair(std::move(submit), std::move(soutobj)));
+		f.callIoctl(DRM_IOCTL_SCHED_TEST_SUBMIT, &submitCmds.back().first);
 	}
 
 	if (release) {
-		// Reap all the submissions
-		for (int i = 0; i < count; i++) {
-			drm_sched_test_wait wait = {
-				.in = {
-					.fence = submitCmds[i].out_fence,
-					.timeout = 100
-				}
-			};
-			//ioctlLambda(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
-			f.ioctlcall(DRM_IOCTL_SCHED_TEST_WAIT, &wait);
+		// Reap all the submissions at the end
+		std::vector<std::pair<drm_sched_test_submit, schedtest::syncobj>>::const_iterator i = submitCmds.begin();
+		std::vector<std::pair<drm_sched_test_submit, schedtest::syncobj>>::const_iterator e = submitCmds.end();
+		for (; i != e; ++i) {
+			i->second.wait();
 		}
 	}
 	// Compute the throughput
@@ -115,17 +67,18 @@ static void usage(const char *cmd)
 	throw std::invalid_argument("");
 }
 
-static void runAll(const std::string &nodeName, int count)
+static void runAll(const int minor, int count)
 {
+	std::cout << "Thread ID " << std::this_thread::get_id() << std::endl;
 	std::cout << "Start auto job cleanup test..." << std::endl;
-	run(nodeName, count, false);
+	run(minor, count, false);
 	std::cout << "Finished auto job cleanup test" << std::endl;
 	std::cout << "Start regular job test..." << std::endl;
-	run(nodeName, count);
+	run(minor, count);
 	std::cout << "Finished regular job test..." << std::endl;
 }
 
-static void runJobs(const std::string &nodeName, int count, int jobs, const std::string &cmd)
+static void runJobs(const int minor, int count, int jobs, const std::string &cmd)
 {
 	auto checkLambda = [cmd](int result) {
 				   if (result)
@@ -140,6 +93,7 @@ static void runJobs(const std::string &nodeName, int count, int jobs, const std:
 	result = posix_spawn_file_actions_addclose(&file_actions,
 						   STDIN_FILENO);
 	checkLambda(result);
+	const std::string nodeName = std::to_string(minor);
 
 	char * const cargv[6] = {strdup(cmd.c_str()), strdup("-n"), strdup(nodeName.c_str()), strdup("-c"),
 				 strdup(cstr.c_str()), 0};
@@ -168,14 +122,14 @@ static void runJobs(const std::string &nodeName, int count, int jobs, const std:
 int main(int argc, char *argv[])
 {
 	try {
-		std::string nodeName = "/dev/dri/renderD128";
+		unsigned int minor = 128;
 		int jobs = 1;
-		int count = 100;
+		int count = 200;
 		char c = '\0';
 		while ((c = getopt (argc, argv, "n:c:j:")) != -1) {
 			switch (c) {
 			case 'n':
-				nodeName = optarg;
+				minor = std::atoi(optarg);
 				break;
 			case 'c':
 				count = std::atoi(optarg);
@@ -193,10 +147,10 @@ int main(int argc, char *argv[])
 		}
 
 		if (jobs == 1) {
-			runAll(nodeName, count);
+			runAll(minor, count);
 		}
 		else {
-			runJobs(nodeName, count, jobs, argv[0]);
+			runJobs(minor, count, jobs, argv[0]);
 		}
 
 	} catch (std::exception &ex) {
