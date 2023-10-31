@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: LGPL-2.1 OR MIT */
 /*
  * Copyright (C) 2021-2022 Xilinx, Inc.
+ * Copyright (C) 2022-2023 Advanced Micro Devices, Inc.
  * Authors:
- *     Sonal Santan <sonal.santan@xilinx.com>
+ *     Sonal Santan <sonal.santan@amd.com>
  */
 
 #include <drm/drm.h>

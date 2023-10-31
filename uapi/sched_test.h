@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
- * Copyright (C) 2021 Xilinx, Inc.
+ * Copyright (C) 2021-2022 Xilinx, Inc.
+ * Copyright (C) 2022-2023 Advanced Micro Devices, Inc.
  * Authors:
- *     Sonal Santan <sonal.santan@xilinx.com>
+ *     Sonal Santan <sonal.santan@amd.com>
  */
 
 #ifndef _DRM_SCHED_TEST_H_
@@ -25,7 +26,6 @@ enum sched_test_queue {
 };
 
 #define DRM_SCHED_TEST_SUBMIT                     0x00
-#define DRM_SCHED_TEST_WAIT                       0x01
 
 struct drm_sched_test_submit {
 	int in_fence;
@@ -33,23 +33,8 @@ struct drm_sched_test_submit {
 	enum sched_test_queue qu;
 };
 
-struct drm_sched_test_wait_in {
-	int fence;
-	signed long timeout;
-};
-
-struct drm_sched_test_wait_out {
-	signed long timeout;
-};
-
-union drm_sched_test_wait {
-	struct drm_sched_test_wait_in in;
-	struct drm_sched_test_wait_out out;
-};
 
 #define DRM_IOCTL_SCHED_TEST_SUBMIT           DRM_IOWR(DRM_COMMAND_BASE + DRM_SCHED_TEST_SUBMIT, struct drm_sched_test_submit)
-#define DRM_IOCTL_SCHED_TEST_WAIT             DRM_IOWR(DRM_COMMAND_BASE + DRM_SCHED_TEST_WAIT, union drm_sched_test_wait)
-
 
 #if defined(__cplusplus)
 }
